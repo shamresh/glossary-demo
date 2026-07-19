@@ -1,0 +1,1478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Consumer Account Onboarding</title>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/layout-base@2.0.1/layout-base.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cose-base@2.2.0/cose-base.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/cytoscape-cose-bilkent@4.1.0/cytoscape-cose-bilkent.min.js"></script>
+<script>
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src;
+      s.onload = resolve;
+      s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  const CDN_CANDIDATES = [
+    'https://unpkg.com/3d-force-graph@1.74.5/dist/3d-force-graph.min.js',
+    'https://cdn.jsdelivr.net/npm/3d-force-graph@1.74.5/dist/3d-force-graph.min.js',
+    'https://unpkg.com/3d-force-graph/dist/3d-force-graph.min.js'
+  ];
+  (async () => {
+    for (const src of CDN_CANDIDATES) {
+      try {
+        await loadScript(src);
+        if (typeof ForceGraph3D !== 'undefined') {
+          window.dispatchEvent(new Event('force-graph-ready'));
+          return;
+        }
+      } catch (e) { /* try next candidate */ }
+    }
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('graph').innerHTML =
+        '<div style="color:#e85d5d;padding:24px;font-family:sans-serif;">' +
+        'Could not load the 3d-force-graph library from any CDN. Check your network connection.</div>';
+    });
+  })();
+
+</script>
+<style>
+
+  :root {
+    --bg: #05070a;
+    --panel: #171a21;
+    --border: #2a2e38;
+    --text: #e6e8eb;
+    --muted: #9aa1ac;
+    --accent: #5aa9ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); height: 100vh; overflow: hidden;
+  }
+  #app { display: flex; height: 100vh; }
+  #sidebar {
+    width: 340px; background: var(--panel); border-left: 1px solid var(--border);
+    padding: 16px; overflow-y: auto; flex-shrink: 0;
+  }
+  #topbar {
+    position: absolute; top: 12px; left: 12px; z-index: 10; display: flex; gap: 8px;
+  }
+  #search {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; width: 240px; font-size: 14px;
+  }
+  .btn {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 8px 12px; border-radius: 8px; font-size: 13px; cursor: pointer;
+  }
+  .btn.active { border-color: var(--accent); color: var(--accent); }
+  h2 { font-size: 16px; margin: 0 0 4px 0; }
+  h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 18px 0 6px 0; }
+  .tag { display: inline-block; font-size: 11px; background: #23272f; color: var(--muted); padding: 2px 8px; border-radius: 100px; margin: 2px 4px 2px 0; }
+  .def { font-size: 14px; line-height: 1.5; color: var(--text); margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .empty { color: var(--muted); font-size: 14px; margin-top: 40px; text-align: center; }
+  .sev-low { color: #7ec97e; }
+  .sev-medium { color: #e8b34d; }
+  .sev-high { color: #e85d5d; }
+  ul.plain { list-style: none; padding: 0; margin: 6px 0; }
+  ul.plain li { font-size: 13px; padding: 3px 0; border-bottom: 1px solid var(--border); }
+  .node-link { cursor: pointer; }
+  .node-link:hover { color: var(--accent); }
+  span.tag.node-link:hover { background: #2a3040; }
+  .node-float-label {
+    /* font-size is set inline per frame (grows/shrinks with zoom); padding
+       and radius use em units so they scale along with it. */
+    position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+    background: rgba(5,7,10,0.75); color: #c7ccd6; font-size: 22px; font-weight: 500;
+    padding: 0.2em 0.5em; border-radius: 0.3em;
+  }
+  .node-float-label.selected { color: #ffffff; font-weight: 700; background: rgba(5,7,10,0.85); }
+  .legend-row { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; }
+  .legend-swatch { flex-shrink: 0; margin-top: 3px; }
+  .legend-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; }
+  .legend-line { display: inline-block; width: 28px; height: 0; border-top-width: 3px; border-top-style: solid; margin-top: 5px; }
+
+
+  #viewport { position: relative; flex: 1; height: 100vh; overflow: hidden; }
+  .view-pane { position: absolute; inset: 0; }
+  .view-pane.view-hidden { visibility: hidden; pointer-events: none; }
+  #docframe { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
+  .view-tabs { display: flex; gap: 2px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .view-tab { background: transparent; border: none; color: var(--muted); padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .view-tab:hover { color: var(--text); }
+  .view-tab[aria-selected="true"] { background: var(--accent); color: #0f1115; }
+  .view-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport">
+    <div id="graph" class="view-pane" role="tabpanel" aria-labelledby="tab-3d"></div>
+    <div id="cy" class="view-pane view-hidden" role="tabpanel" aria-labelledby="tab-2d" aria-hidden="true"></div>
+    <div id="docpane" class="view-pane view-hidden" role="tabpanel" aria-labelledby="tab-doc" aria-hidden="true">
+      <iframe id="docframe" title="Documentation" src="ubiquitous-language-multiple-banking-stories-transcript-doc.html"></iframe>
+    </div>
+  </div>
+  <div id="topbar">
+    <button class="btn" id="back-button" title="Back to the page that opened this viewer">&larr; Back</button>
+    <div class="view-tabs" role="tablist" aria-label="View">
+      <button class="view-tab" role="tab" id="tab-3d" data-view="3d" aria-selected="true" aria-controls="graph" tabindex="0">3D</button>
+      <button class="view-tab" role="tab" id="tab-2d" data-view="2d" aria-selected="false" aria-controls="cy" tabindex="-1">2D</button>
+      <button class="view-tab" role="tab" id="tab-doc" data-view="doc" aria-selected="false" aria-controls="docpane" tabindex="-1">Doc</button>
+    </div>
+    <input id="search" placeholder="Find a term or context..." />
+    <button class="btn active" id="toggle-drift">Drift variants</button>
+    <button class="btn" id="reset-view" style="display:none">Reset view</button>
+  </div>
+  <div id="sidebar"><div class="empty">Click a concept or context to see details.<br><br>Drag to orbit, scroll to zoom, right-drag to pan.</div></div>
+</div>
+<script>
+
+function escapeHtml(s) {
+  const div = document.createElement('div');
+  div.textContent = s == null ? '' : String(s);
+  return div.innerHTML;
+}
+
+// Sidebar back/forward history -- shared by the 2D (Cytoscape) and 3D
+// (3d-force-graph) viewers' own selectNode()s. In the combined tabbed
+// viewer (build_viewer.py) both engines' init scripts run against the same
+// #sidebar element, so this restructures it exactly once (guarded by the
+// #nav-history check) into a sticky nav toolbar above a #sidebar-content
+// sub-div -- whichever engine initializes second reuses what the first
+// already built instead of re-wrapping it (which would nest duplicate IDs
+// and detach the first engine's button listeners from the live DOM).
+// Each engine registers itself via registerEngine() so Back/Forward can
+// replay a history entry regardless of which engine originally pushed it.
+// It also carries the Legend toggle: each engine registers a legend-content
+// generator via registerLegend(), and the button dispatches to whichever
+// engine's pane is currently visible (activeEngine()) -- in the combined
+// tabbed viewer #graph/#cy share this one #sidebar, so only one of them is
+// ever the "current" engine at a time; in a standalone viewer only one of
+// #graph/#cy exists at all, so it's the only candidate.
+const sidebarHistory = (function () {
+  const sidebarEl = document.getElementById('sidebar');
+  if (!document.getElementById('nav-history')) {
+    const initialHtml = sidebarEl.innerHTML;
+    sidebarEl.innerHTML =
+      '<style>#nav-history button:disabled { opacity: 0.35; cursor: default; }</style>' +
+      '<div id="nav-history" style="position:sticky;top:0;display:flex;gap:8px;' +
+        'padding-bottom:10px;margin-bottom:10px;border-bottom:1px solid var(--border);' +
+        'background:var(--panel);z-index:1;">' +
+        '<button id="nav-back" class="btn" disabled title="Back">&larr; Back</button>' +
+        '<button id="nav-forward" class="btn" disabled title="Forward">Forward &rarr;</button>' +
+        '<button id="nav-legend" class="btn" title="What do the colors, shapes, and lines mean?">Legend</button>' +
+      '</div>' +
+      '<div id="sidebar-content">' + initialHtml + '</div>';
+  }
+  const contentEl = document.getElementById('sidebar-content');
+  const backBtn = document.getElementById('nav-back');
+  const forwardBtn = document.getElementById('nav-forward');
+  const legendBtn = document.getElementById('nav-legend');
+  // stack entries are {engine, id} so Back/Forward can tell which engine's
+  // selector to replay a given entry through.
+  let stack = [];
+  let index = -1;
+  const selectors = {};
+  const legends = {}; // engine name -> () => htmlString
+
+  function updateButtons() {
+    backBtn.disabled = index <= 0;
+    forwardBtn.disabled = index >= stack.length - 1;
+  }
+  function goTo(newIndex) {
+    const entry = stack[newIndex];
+    const selector = selectors[entry.engine];
+    if (!selector || !selector(entry.id)) return;
+    index = newIndex;
+    updateButtons();
+  }
+  backBtn.addEventListener('click', () => { if (index > 0) goTo(index - 1); });
+  forwardBtn.addEventListener('click', () => { if (index < stack.length - 1) goTo(index + 1); });
+
+  // Same '3d'/'2d' engine names selectors/legends are keyed by, resolved to
+  // whichever one's pane is actually on screen right now. Not a data-driven
+  // lookup because there are only ever these two engines/containers, fixed
+  // by build_graph_2d.py/_3d.py -- see build_viewer.py's VIEW_TAB_CONTROLLER_JS
+  // for the 'view-hidden' class this reads.
+  function activeEngine() {
+    const graphEl = document.getElementById('graph');
+    const cyEl = document.getElementById('cy');
+    if (graphEl && !graphEl.classList.contains('view-hidden')) return '3d';
+    if (cyEl && !cyEl.classList.contains('view-hidden')) return '2d';
+    return null;
+  }
+  legendBtn.addEventListener('click', () => {
+    const engine = activeEngine();
+    const generator = engine && legends[engine];
+    if (generator) contentEl.innerHTML = generator();
+  });
+
+  return {
+    setContent(htmlStr) { contentEl.innerHTML = htmlStr; },
+    // selectByIdFn(id) must select the node exactly as a real click would
+    // (sans re-pushing history) and return true, or return false if this
+    // engine doesn't have that id (e.g. wrong tab).
+    registerEngine(name, selectByIdFn) { selectors[name] = selectByIdFn; },
+    // generatorFn() returns the legend's HTML for this engine, computed
+    // fresh from the current graph data (so it only mentions what's
+    // actually on screen) each time the button is clicked.
+    registerLegend(name, generatorFn) { legends[name] = generatorFn; },
+    push(engine, id) {
+      if (index >= 0 && stack[index].engine === engine && stack[index].id === id) return;
+      stack = stack.slice(0, index + 1);
+      stack.push({ engine, id });
+      index = stack.length - 1;
+      updateButtons();
+    },
+  };
+})();
+
+function showSidebar(htmlStr) {
+  sidebarHistory.setContent(htmlStr);
+}
+
+
+
+(function () {
+  const tabs = Array.from(document.querySelectorAll('.view-tab'));
+  const panes = {
+    '3d': document.getElementById('graph'),
+    '2d': document.getElementById('cy'),
+    'doc': document.getElementById('docpane'),
+  };
+  const resetViewBtn = document.getElementById('reset-view');
+  const searchInput = document.getElementById('search');
+  const driftToggleBtn = document.getElementById('toggle-drift');
+  const sidebar = document.getElementById('sidebar');
+
+  function activate(view, opts) {
+    const focus = opts && opts.focus;
+    tabs.forEach(tab => {
+      const isActive = tab.dataset.view === view;
+      tab.setAttribute('aria-selected', String(isActive));
+      tab.tabIndex = isActive ? 0 : -1;
+      if (isActive && focus) tab.focus();
+    });
+    Object.keys(panes).forEach(key => {
+      const hidden = key !== view;
+      panes[key].classList.toggle('view-hidden', hidden);
+      panes[key].setAttribute('aria-hidden', String(hidden));
+    });
+    if (resetViewBtn) resetViewBtn.style.display = view === '2d' ? '' : 'none';
+    // Search and the drift-variants toggle act on the 3D/2D graphs, not the
+    // Doc tab's plain <iframe> -- hidden rather than merely disabled so the
+    // topbar doesn't show controls that do nothing on that tab.
+    if (searchInput) searchInput.style.display = view === 'doc' ? 'none' : '';
+    if (driftToggleBtn) driftToggleBtn.style.display = view === 'doc' ? 'none' : '';
+    // The concept/context detail sidebar only ever gets populated by clicks
+    // in the 3D/2D graphs -- the Doc tab's iframe has no way to fill it in,
+    // so it'd otherwise sit there frozen on whatever was last selected.
+    if (sidebar) sidebar.style.display = view === 'doc' ? 'none' : '';
+    // #node-labels (the 3D view's floating name-label layer) is appended to
+    // #app, not #graph -- ForceGraph3D() clears/rebuilds #graph's contents
+    // on construction, so it can't live there -- which means it sits
+    // outside the .view-pane visibility toggling above and has to be
+    // hidden explicitly here. Looked up fresh (not cached at IIFE setup
+    // time) since it doesn't exist until the 3D script creates it, which
+    // can happen after this controller has already run once.
+    const labelsLayer = document.getElementById('node-labels');
+    if (labelsLayer) labelsLayer.style.display = view === '3d' ? '' : 'none';
+  }
+
+  tabs.forEach((tab, i) => {
+    tab.addEventListener('click', () => activate(tab.dataset.view));
+    tab.addEventListener('keydown', (e) => {
+      let targetIndex = null;
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') targetIndex = (i + 1) % tabs.length;
+      else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') targetIndex = (i - 1 + tabs.length) % tabs.length;
+      else if (e.key === 'Home') targetIndex = 0;
+      else if (e.key === 'End') targetIndex = tabs.length - 1;
+      if (targetIndex !== null) {
+        e.preventDefault();
+        activate(tabs[targetIndex].dataset.view, { focus: true });
+      }
+    });
+  });
+
+  activate('3d');
+})();
+
+
+
+(function () {
+  const backBtn = document.getElementById('back-button');
+  if (!backBtn) return;
+  if (!document.referrer && window.history.length <= 1) {
+    backBtn.style.display = 'none';
+    return;
+  }
+  backBtn.addEventListener('click', () => {
+    if (window.history.length > 1) {
+      window.history.back();
+    } else if (document.referrer) {
+      window.location.href = document.referrer;
+    }
+  });
+})();
+
+
+
+function init2D() {
+const GRAPH = {"nodes": [{"data": {"id": "C1", "type": "context", "label": "Branch Channel", "description": "Front-office branch operations where Personal Bankers interact with Applicants, collect documents, and submit applications."}}, {"data": {"id": "C2", "type": "context", "label": "Digital Channel", "description": "Digital/mobile app channel where Applicants self-serve to fill in details and submit cases for account opening."}}, {"data": {"id": "C3", "type": "context", "label": "Compliance", "description": "Mid-office compliance operations including KYC review, watchlist screening, and identity verification."}}, {"data": {"id": "C4", "type": "context", "label": "Fraud", "description": "Fraud risk assessment operations including risk scoring, threshold comparison, and manual override queue."}}, {"data": {"id": "C5", "type": "context", "label": "Core Banking", "description": "Core banking system responsible for creating deposit accounts, ledger records, and publishing account-opened events."}}, {"data": {"id": "C6", "type": "context", "label": "Notification", "description": "Notification service responsible for sending communications (emails) to applicants."}}, {"data": {"id": "personal_banker", "type": "concept", "label": "Personal Banker", "kind": "person", "definition": "A bank employee who collects applicant information, keys applications, and interacts with customers in the branch channel.", "owning_context": "C1", "aliases": ["Personal Banker"], "appears_in_contexts": ["C1", "C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 4, "shared_kernel": true, "context_overrides": [], "homonyms": []}}, {"data": {"id": "applicant", "type": "concept", "label": "Applicant", "kind": "person", "definition": "A person applying to open a deposit account, providing personal details, ID, SSN, proof of address, and initial deposit.", "owning_context": "C1", "aliases": ["Applicant"], "appears_in_contexts": ["C1", "C2", "C3", "C4", "C5", "C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 6, "shared_kernel": true, "context_overrides": [], "homonyms": []}}, {"data": {"id": "compliance_analyst", "type": "concept", "label": "Compliance Analyst", "kind": "person", "definition": "A compliance team member who reviews screening results, documents KYC Cases, holds cases for fraud review, and approves cases.", "owning_context": "C3", "aliases": ["Compliance Analyst"], "appears_in_contexts": ["C3", "C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "compliance_ops_lead", "type": "concept", "label": "Compliance Ops Lead", "kind": "person", "definition": "A senior compliance team member who pulls stalled KYC Cases, compares risk scores against thresholds, and releases cases back for approval.", "owning_context": "C3", "aliases": ["Compliance Ops Lead"], "appears_in_contexts": ["C3", "C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "fraud_analyst", "type": "concept", "label": "Fraud Analyst", "kind": "person", "definition": "A fraud team member who monitors risk scores, compares them against thresholds, places cases into manual override queue, and can freeze/close deposit accounts.", "owning_context": "C4", "aliases": ["Fraud Analyst"], "appears_in_contexts": ["C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "core_banking_ops_analyst", "type": "concept", "label": "Core Banking Ops Analyst", "kind": "person", "definition": "A core banking operations team member who may create deposit accounts in the Core Banking System.", "owning_context": "C5", "aliases": ["Core Banking Ops Analyst"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "screening_engine", "type": "concept", "label": "Screening Engine", "kind": "system", "definition": "A system that runs applicant data against watchlists and produces screening results.", "owning_context": "C3", "aliases": ["Screening Engine"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "fraud_engine", "type": "concept", "label": "Fraud Engine", "kind": "system", "definition": "A system that produces risk scores for KYC Cases or Applications flagged for unusual funding.", "owning_context": "C4", "aliases": ["Fraud Engine"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "core_banking_system", "type": "concept", "label": "Core Banking System", "kind": "system", "definition": "The central banking system that creates deposit accounts, generates ledger records, and publishes account-opened events.", "owning_context": "C5", "aliases": ["Core Banking System"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "notification_service", "type": "concept", "label": "Notification Service", "kind": "system", "definition": "A system that picks up account-opened events and sends notification emails to applicants.", "owning_context": "C6", "aliases": ["Notification Service"], "appears_in_contexts": ["C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "branch_system", "type": "concept", "label": "Branch System", "kind": "system", "definition": "The system used in the branch channel where Personal Bankers key and submit applications.", "owning_context": "C1", "aliases": ["Branch System"], "appears_in_contexts": ["C1"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "digital_app", "type": "concept", "label": "Digital App", "kind": "system", "definition": "The mobile application through which Applicants self-submit their details for account opening in the digital channel.", "owning_context": "C2", "aliases": ["Digital App"], "appears_in_contexts": ["C2"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "compliance_system", "type": "concept", "label": "Compliance System", "kind": "system", "definition": "The system that manages compliance workflows, converts Applications/Cases into KYC Cases, and hands them to Core Banking.", "owning_context": "C3", "aliases": ["Compliance System"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "third_party_verification_service", "type": "concept", "label": "Third-Party Verification Service", "kind": "system", "definition": "An external system that performs identity verification on KYC Cases.", "owning_context": "C3", "aliases": ["Third-Party Verification Service"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-compliance-kyc-review.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "application", "type": "concept", "label": "Application", "kind": "work_object", "definition": "The initial document/record containing applicant details (ID, SSN, proof of address, initial deposit) collected and submitted in the branch channel.", "owning_context": "C1", "aliases": ["Application", "the form", "application"], "appears_in_contexts": ["C1", "C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 4, "shared_kernel": true, "context_overrides": [], "homonyms": [{"term": "Application", "meanings": [{"context": "C1", "concept_id": "application", "definition": "The initial document collected by the Personal Banker in the branch channel containing applicant details."}, {"context": "C5", "concept_id": "kyc_case", "definition": "Used incorrectly in story-core-banking-account-opening.md to refer to the compliance-reviewed work object that should be called KYC Case."}], "is_boundary_signal": true}]}}, {"data": {"id": "case_digital", "type": "concept", "label": "Case", "kind": "work_object", "definition": "The initial document/record containing applicant details created through the Digital App in the digital channel.", "owning_context": "C2", "aliases": ["Case", "the case"], "appears_in_contexts": ["C2", "C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": [{"term": "Case", "meanings": [{"context": "C2", "concept_id": "case_digital", "definition": "The initial document created by the Applicant through the Digital App in the digital channel."}, {"context": "C3", "concept_id": "kyc_case", "definition": "Used as an alias/short form for KYC Case within Compliance context."}], "is_boundary_signal": true}]}}, {"data": {"id": "kyc_case", "type": "concept", "label": "KYC Case", "kind": "work_object", "definition": "The standardized compliance record created from an Application or Case, used for screening, fraud assessment, and approval workflow.", "owning_context": "C3", "aliases": ["KYC Case", "KYC file", "the file", "case", "K.Y.C. Case"], "appears_in_contexts": ["C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md"], "proposed": false, "coupling": 3, "shared_kernel": true, "context_overrides": [{"concept_id": "kyc_case", "context": "C5", "local_term": "Application", "global_canonical_term": "KYC Case", "kind": "accidental_drift", "reason": "In story-core-banking-account-opening.md (Core Banking context), the work object is consistently called 'Application' even after it has been through compliance review and should be a KYC Case. This is intra-context inconsistency within the Compliance-to-Core-Banking handoff."}, {"concept_id": "kyc_case", "context": "C4", "local_term": "Application", "global_canonical_term": "KYC Case", "kind": "accidental_drift", "reason": "In story-post-account-fraud-reversal.md, the Compliance Analyst sends an 'Application' to the Fraud Engine, but in other stories (story-fraud-risk-scoring.md) the same handoff uses 'KYC Case'. This is synonym drift within the Fraud context."}], "homonyms": [{"term": "Application", "meanings": [{"context": "C1", "concept_id": "application", "definition": "The initial document collected by the Personal Banker in the branch channel containing applicant details."}, {"context": "C5", "concept_id": "kyc_case", "definition": "Used incorrectly in story-core-banking-account-opening.md to refer to the compliance-reviewed work object that should be called KYC Case."}], "is_boundary_signal": true}, {"term": "Case", "meanings": [{"context": "C2", "concept_id": "case_digital", "definition": "The initial document created by the Applicant through the Digital App in the digital channel."}, {"context": "C3", "concept_id": "kyc_case", "definition": "Used as an alias/short form for KYC Case within Compliance context."}], "is_boundary_signal": true}]}}, {"data": {"id": "screening_result", "type": "concept", "label": "Screening Result", "kind": "work_object", "definition": "Output from the Screening Engine indicating whether the applicant matched any watchlist entries.", "owning_context": "C3", "aliases": ["Screening Result"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "risk_score", "type": "concept", "label": "Risk Score", "kind": "work_object", "definition": "A numeric value generated by the Fraud Engine indicating the likelihood of fraud for a given case.", "owning_context": "C4", "aliases": ["Risk Score"], "appears_in_contexts": ["C4", "C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "risk_threshold_table", "type": "concept", "label": "Risk Threshold Table", "kind": "work_object", "definition": "A reference table defining acceptable risk score cutoffs per account type, used to determine if a case can proceed.", "owning_context": "C4", "aliases": ["Risk Threshold Table"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "deposit_account", "type": "concept", "label": "Deposit Account", "kind": "work_object", "definition": "The bank account record created in the Core Banking System ledger after KYC approval.", "owning_context": "C5", "aliases": ["Deposit Account", "account", "New Account Record"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "new_account_record", "type": "concept", "label": "New Account Record", "kind": "work_object", "definition": "The ledger record generated in the Core Banking System when a Deposit Account is created.", "owning_context": "C5", "aliases": ["New Account Record"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "account_opened_event", "type": "concept", "label": "Account Opened Event", "kind": "event", "definition": "An event published by the Core Banking System after a deposit account is created, consumed by the Notification Service.", "owning_context": "C5", "aliases": ["Account Opened Event", "Account Opened event"], "appears_in_contexts": ["C5", "C6"], "appears_in_stories": ["story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "notification", "type": "concept", "label": "Notification", "kind": "work_object", "definition": "An email communication sent to the Applicant regarding account opening.", "owning_context": "C6", "aliases": ["Notification", "Confirmation Email"], "appears_in_contexts": ["C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [{"concept_id": "notification", "context": "C6", "local_term": "Confirmation Email", "global_canonical_term": "Notification", "kind": "accidental_drift", "reason": "In story-core-banking-account-opening.md, the Notification Service sends a 'Confirmation Email' instead of a 'Notification'. Both refer to the same email sent to the Applicant."}], "homonyms": []}}, {"data": {"id": "welcome_packet", "type": "concept", "label": "Welcome Packet", "kind": "work_object", "definition": "A printed document given to the Applicant by the Personal Banker after account creation in the branch channel.", "owning_context": "C1", "aliases": ["Welcome Packet", "paperwork copy"], "appears_in_contexts": ["C1"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "watchlist", "type": "concept", "label": "Watchlist", "kind": "work_object", "definition": "A reference list of subjects/entities used by the Screening Engine to check applicants against.", "owning_context": "C3", "aliases": ["Watchlist"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "manual_override_queue", "type": "concept", "label": "Manual Override Queue", "kind": "work_object", "definition": "A queue where KYC Cases are placed by the Fraud Analyst when the Risk Score exceeds the threshold, for further manual review.", "owning_context": "C4", "aliases": ["manual override queue"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-fraud-risk-scoring.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}}, {"data": {"id": "variant--kyc_case--1", "type": "variant", "label": "K.Y.C. Case", "severity": "medium", "context": "C3", "stories": ["story-compliance-kyc-review.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}}, {"data": {"id": "variant--kyc_case--2", "type": "variant", "label": "KYC file", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}}, {"data": {"id": "variant--kyc_case--3", "type": "variant", "label": "the file", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}}, {"data": {"id": "variant--kyc_case--4", "type": "variant", "label": "case", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}}, {"data": {"id": "variant--kyc_case--0", "type": "variant", "label": "Application", "severity": "high", "context": "C5", "stories": ["story-core-banking-account-opening.md"], "drift_type": "intra_context_inconsistency", "suggested_fix": "In story-core-banking-account-opening.md, the work object received by Core Banking System is called 'Application' but should be 'KYC Case' to match the other stories and the compliance-to-core-banking handoff.", "severity_rationale": "Using 'Application' instead of 'KYC Case' in Core Banking context could lead to data model confusion \u2014 the object arriving at Core Banking has already been through compliance review and is semantically a KYC Case, not the raw Application."}}, {"data": {"id": "variant--notification--1", "type": "variant", "label": "Confirmation Email", "severity": "low", "context": "C6", "stories": ["story-core-banking-account-opening.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'Notification' across all stories; 'Confirmation Email' is a more specific term that can be kept as an alias but the canonical term should be consistent.", "severity_rationale": "Both terms clearly refer to the same email sent to the applicant; the difference is cosmetic and unlikely to cause implementation errors."}}, {"data": {"id": "variant--deposit_account--1", "type": "variant", "label": "New Account Record", "severity": "medium", "context": "C5", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "drift_type": "synonym_drift", "suggested_fix": "Clarify whether 'New Account Record' is the same as 'Deposit Account' or a separate ledger entry. If they are the same, standardise on 'Deposit Account'. If distinct, define both separately.", "severity_rationale": "Ambiguity between 'Deposit Account' and 'New Account Record' could lead to confusion about whether they are the same object or two different artefacts (the account vs. the ledger record)."}}, {"data": {"id": "variant--deposit_account--2", "type": "variant", "label": "account", "severity": "medium", "context": "C5", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"], "drift_type": "synonym_drift", "suggested_fix": "Clarify whether 'New Account Record' is the same as 'Deposit Account' or a separate ledger entry. If they are the same, standardise on 'Deposit Account'. If distinct, define both separately.", "severity_rationale": "Ambiguity between 'Deposit Account' and 'New Account Record' could lead to confusion about whether they are the same object or two different artefacts (the account vs. the ledger record)."}}], "edges": [{"data": {"id": "personal_banker--belongs_to--C1", "source": "personal_banker", "target": "C1", "type": "belongs_to"}}, {"data": {"id": "personal_banker--used_in--C3", "source": "personal_banker", "target": "C3", "type": "used_in"}}, {"data": {"id": "personal_banker--used_in--C4", "source": "personal_banker", "target": "C4", "type": "used_in"}}, {"data": {"id": "personal_banker--used_in--C5", "source": "personal_banker", "target": "C5", "type": "used_in"}}, {"data": {"id": "applicant--belongs_to--C1", "source": "applicant", "target": "C1", "type": "belongs_to"}}, {"data": {"id": "applicant--used_in--C2", "source": "applicant", "target": "C2", "type": "used_in"}}, {"data": {"id": "applicant--used_in--C3", "source": "applicant", "target": "C3", "type": "used_in"}}, {"data": {"id": "applicant--used_in--C4", "source": "applicant", "target": "C4", "type": "used_in"}}, {"data": {"id": "applicant--used_in--C5", "source": "applicant", "target": "C5", "type": "used_in"}}, {"data": {"id": "applicant--used_in--C6", "source": "applicant", "target": "C6", "type": "used_in"}}, {"data": {"id": "compliance_analyst--belongs_to--C3", "source": "compliance_analyst", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "compliance_analyst--used_in--C4", "source": "compliance_analyst", "target": "C4", "type": "used_in"}}, {"data": {"id": "compliance_ops_lead--belongs_to--C3", "source": "compliance_ops_lead", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "compliance_ops_lead--used_in--C4", "source": "compliance_ops_lead", "target": "C4", "type": "used_in"}}, {"data": {"id": "fraud_analyst--belongs_to--C4", "source": "fraud_analyst", "target": "C4", "type": "belongs_to"}}, {"data": {"id": "fraud_analyst--used_in--C5", "source": "fraud_analyst", "target": "C5", "type": "used_in"}}, {"data": {"id": "core_banking_ops_analyst--belongs_to--C5", "source": "core_banking_ops_analyst", "target": "C5", "type": "belongs_to"}}, {"data": {"id": "screening_engine--belongs_to--C3", "source": "screening_engine", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "fraud_engine--belongs_to--C4", "source": "fraud_engine", "target": "C4", "type": "belongs_to"}}, {"data": {"id": "core_banking_system--belongs_to--C5", "source": "core_banking_system", "target": "C5", "type": "belongs_to"}}, {"data": {"id": "notification_service--belongs_to--C6", "source": "notification_service", "target": "C6", "type": "belongs_to"}}, {"data": {"id": "branch_system--belongs_to--C1", "source": "branch_system", "target": "C1", "type": "belongs_to"}}, {"data": {"id": "digital_app--belongs_to--C2", "source": "digital_app", "target": "C2", "type": "belongs_to"}}, {"data": {"id": "compliance_system--belongs_to--C3", "source": "compliance_system", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "third_party_verification_service--belongs_to--C3", "source": "third_party_verification_service", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "application--belongs_to--C1", "source": "application", "target": "C1", "type": "belongs_to"}}, {"data": {"id": "application--used_in--C3", "source": "application", "target": "C3", "type": "used_in"}}, {"data": {"id": "application--used_in--C4", "source": "application", "target": "C4", "type": "used_in"}}, {"data": {"id": "application--used_in--C5", "source": "application", "target": "C5", "type": "used_in"}}, {"data": {"id": "case_digital--belongs_to--C2", "source": "case_digital", "target": "C2", "type": "belongs_to"}}, {"data": {"id": "case_digital--used_in--C3", "source": "case_digital", "target": "C3", "type": "used_in"}}, {"data": {"id": "kyc_case--belongs_to--C3", "source": "kyc_case", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "kyc_case--used_in--C4", "source": "kyc_case", "target": "C4", "type": "used_in"}}, {"data": {"id": "kyc_case--used_in--C5", "source": "kyc_case", "target": "C5", "type": "used_in"}}, {"data": {"id": "screening_result--belongs_to--C3", "source": "screening_result", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "risk_score--belongs_to--C4", "source": "risk_score", "target": "C4", "type": "belongs_to"}}, {"data": {"id": "risk_score--used_in--C3", "source": "risk_score", "target": "C3", "type": "used_in"}}, {"data": {"id": "risk_threshold_table--belongs_to--C4", "source": "risk_threshold_table", "target": "C4", "type": "belongs_to"}}, {"data": {"id": "deposit_account--belongs_to--C5", "source": "deposit_account", "target": "C5", "type": "belongs_to"}}, {"data": {"id": "new_account_record--belongs_to--C5", "source": "new_account_record", "target": "C5", "type": "belongs_to"}}, {"data": {"id": "account_opened_event--belongs_to--C5", "source": "account_opened_event", "target": "C5", "type": "belongs_to"}}, {"data": {"id": "account_opened_event--used_in--C6", "source": "account_opened_event", "target": "C6", "type": "used_in"}}, {"data": {"id": "notification--belongs_to--C6", "source": "notification", "target": "C6", "type": "belongs_to"}}, {"data": {"id": "welcome_packet--belongs_to--C1", "source": "welcome_packet", "target": "C1", "type": "belongs_to"}}, {"data": {"id": "watchlist--belongs_to--C3", "source": "watchlist", "target": "C3", "type": "belongs_to"}}, {"data": {"id": "manual_override_queue--belongs_to--C4", "source": "manual_override_queue", "target": "C4", "type": "belongs_to"}}, {"data": {"id": "rel-0", "source": "personal_banker", "target": "application", "type": "relates_to", "relation": "produces", "note": "Personal Banker collects, keys, and submits the Application.", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-1", "source": "applicant", "target": "case_digital", "type": "relates_to", "relation": "produces", "note": "Applicant fills in the Case into the Digital App.", "stories": ["story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-2", "source": "digital_app", "target": "case_digital", "type": "relates_to", "relation": "produces", "note": "Digital App submits the Case to the Compliance System.", "stories": ["story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-3", "source": "application", "target": "kyc_case", "type": "relates_to", "relation": "transformed_into", "note": "The Application is converted into a KYC Case at the point of submission to the Screening Engine or Compliance System.", "stories": ["story-compliance-kyc-review.md", "story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-4", "source": "case_digital", "target": "kyc_case", "type": "relates_to", "relation": "transformed_into", "note": "The Case from the Digital App is converted into a KYC Case by the Compliance System.", "stories": ["story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-5", "source": "screening_engine", "target": "screening_result", "type": "relates_to", "relation": "produces", "note": "Screening Engine runs the Subject against the Watchlist and produces a Screening Result.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-6", "source": "screening_result", "target": "kyc_case", "type": "relates_to", "relation": "depends_on", "note": "Screening Result is reviewed by Compliance Analyst and documented on the KYC Case.", "stories": ["story-branch-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"]}}, {"data": {"id": "rel-7", "source": "compliance_analyst", "target": "kyc_case", "type": "relates_to", "relation": "produces", "note": "Compliance Analyst documents, holds, sends, and approves the KYC Case.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md"]}}, {"data": {"id": "rel-8", "source": "fraud_engine", "target": "risk_score", "type": "relates_to", "relation": "produces", "note": "Fraud Engine produces a Risk Score for a KYC Case or Application.", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-9", "source": "risk_score", "target": "risk_threshold_table", "type": "relates_to", "relation": "compared_against", "note": "Risk Score is compared against the Risk Threshold Table by the Fraud Analyst or Compliance Ops Lead.", "stories": ["story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-10", "source": "fraud_analyst", "target": "manual_override_queue", "type": "relates_to", "relation": "produces", "note": "Fraud Analyst places KYC Case into the manual override queue if Risk Score exceeds threshold.", "stories": ["story-fraud-risk-scoring.md"]}}, {"data": {"id": "rel-11", "source": "compliance_ops_lead", "target": "kyc_case", "type": "relates_to", "relation": "produces", "note": "Compliance Ops Lead pulls stalled KYC Cases and releases them back to Compliance Analyst.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"]}}, {"data": {"id": "rel-12", "source": "kyc_case", "target": "core_banking_system", "type": "relates_to", "relation": "sent_to", "note": "KYC Case is handed to Core Banking System after approval for account creation.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"]}}, {"data": {"id": "rel-13", "source": "core_banking_system", "target": "deposit_account", "type": "relates_to", "relation": "produces", "note": "Core Banking System creates the Deposit Account in the ledger.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-14", "source": "core_banking_system", "target": "new_account_record", "type": "relates_to", "relation": "produces", "note": "Core Banking System generates a New Account Record in the ledger.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-15", "source": "core_banking_system", "target": "account_opened_event", "type": "relates_to", "relation": "produces", "note": "Core Banking System publishes an Account Opened Event after account creation.", "stories": ["story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-16", "source": "account_opened_event", "target": "notification_service", "type": "relates_to", "relation": "triggers", "note": "Notification Service picks up the Account Opened Event to send a notification.", "stories": ["story-core-banking-account-opening.md"]}}, {"data": {"id": "rel-17", "source": "notification_service", "target": "notification", "type": "relates_to", "relation": "produces", "note": "Notification Service sends a Notification (email) to the Applicant.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-18", "source": "personal_banker", "target": "welcome_packet", "type": "relates_to", "relation": "produces", "note": "Personal Banker prints a Welcome Packet for the Applicant.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-19", "source": "fraud_analyst", "target": "deposit_account", "type": "relates_to", "relation": "produces", "note": "Fraud Analyst manually freezes or closes the Deposit Account in the Core Banking System.", "stories": ["story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-20", "source": "screening_engine", "target": "watchlist", "type": "relates_to", "relation": "depends_on", "note": "Screening Engine runs the Subject against the Watchlist.", "stories": ["story-digital-account-application-submission.md"]}}, {"data": {"id": "rel-21", "source": "third_party_verification_service", "target": "kyc_case", "type": "relates_to", "relation": "produces", "note": "Third-Party Verification Service passes and flips the KYC Case status after identity verification.", "stories": ["story-compliance-kyc-review.md"]}}, {"data": {"id": "rel-22", "source": "compliance_analyst", "target": "application", "type": "relates_to", "relation": "produces", "note": "Compliance Analyst documents, holds, sends, and approves the Application (in stories where Application is used instead of KYC Case).", "stories": ["story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"]}}, {"data": {"id": "rel-23", "source": "compliance_ops_lead", "target": "risk_score", "type": "relates_to", "relation": "monitors", "note": "Compliance Ops Lead compares the Risk Score against the Risk Threshold Table.", "stories": ["story-post-account-fraud-reversal.md"]}}, {"data": {"id": "crossing-0", "source": "application", "target": "kyc_case", "type": "translates_to", "from_context": "C1", "to_context": "C3", "from_term": "Application", "to_term": "KYC Case", "note": "When the Application crosses from Branch Channel to Compliance, it is converted into a KYC Case \u2014 the primary compliance work object."}}, {"data": {"id": "crossing-1", "source": "case_digital", "target": "kyc_case", "type": "translates_to", "from_context": "C2", "to_context": "C3", "from_term": "Case", "to_term": "KYC Case", "note": "When the Case crosses from Digital Channel to Compliance, it is converted into a KYC Case by the Compliance System."}}, {"data": {"id": "crossing-2", "source": "kyc_case", "target": "deposit_account", "type": "translates_to", "from_context": "C3", "to_context": "C5", "from_term": "KYC Case", "to_term": "Deposit Account", "note": "After approval, the KYC Case is handed to Core Banking which creates a Deposit Account \u2014 the work object changes form and ownership."}}, {"data": {"id": "crossing-3", "source": "account_opened_event", "target": "notification", "type": "translates_to", "from_context": "C5", "to_context": "C6", "from_term": "Account Opened Event", "to_term": "Notification", "note": "The Core Banking System publishes an Account Opened Event which the Notification Service consumes to send a Notification to the Applicant."}}, {"data": {"id": "variant--kyc_case--1--drift_of--kyc_case", "source": "variant--kyc_case--1", "target": "kyc_case", "type": "drift_of", "severity": "medium"}}, {"data": {"id": "variant--kyc_case--2--drift_of--kyc_case", "source": "variant--kyc_case--2", "target": "kyc_case", "type": "drift_of", "severity": "medium"}}, {"data": {"id": "variant--kyc_case--3--drift_of--kyc_case", "source": "variant--kyc_case--3", "target": "kyc_case", "type": "drift_of", "severity": "medium"}}, {"data": {"id": "variant--kyc_case--4--drift_of--kyc_case", "source": "variant--kyc_case--4", "target": "kyc_case", "type": "drift_of", "severity": "medium"}}, {"data": {"id": "variant--kyc_case--0--drift_of--kyc_case", "source": "variant--kyc_case--0", "target": "kyc_case", "type": "drift_of", "severity": "high"}}, {"data": {"id": "variant--kyc_case--1--drift_of--kyc_case", "source": "variant--kyc_case--1", "target": "kyc_case", "type": "drift_of", "severity": "high"}}, {"data": {"id": "variant--notification--1--drift_of--notification", "source": "variant--notification--1", "target": "notification", "type": "drift_of", "severity": "low"}}, {"data": {"id": "variant--deposit_account--1--drift_of--deposit_account", "source": "variant--deposit_account--1", "target": "deposit_account", "type": "drift_of", "severity": "medium"}}, {"data": {"id": "variant--deposit_account--2--drift_of--deposit_account", "source": "variant--deposit_account--2", "target": "deposit_account", "type": "drift_of", "severity": "medium"}}]};
+const DOMAIN = "Consumer Account Onboarding";
+
+if (typeof cytoscapeCoseBilkent !== 'undefined') {
+  cytoscape.use(cytoscapeCoseBilkent);
+}
+
+const contextPalette = ["#5aa9ff","#f2994a","#bb6bd9","#6fcf97","#f2c94c","#eb5757","#56ccf2","#9b51e0","#27ae60","#f2994a"];
+const contextIds = GRAPH.nodes.filter(n => n.data.type === "context").map(n => n.data.id);
+const contextColor = {};
+contextIds.forEach((id, i) => contextColor[id] = contextPalette[i % contextPalette.length]);
+
+const contextLabel = {};
+GRAPH.nodes.filter(n => n.data.type === "context").forEach(n => { contextLabel[n.data.id] = n.data.label; });
+function contextName(id) {
+  return contextLabel[id] || id;
+}
+
+function storyTitle(filename) {
+  return String(filename)
+    .replace(/^story-/, '')
+    .replace(/\.md$/, '')
+    .split('-')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+function colorForConcept(ele) {
+  return contextColor[ele.data('owning_context')] || "#5aa9ff";
+}
+
+// "transformed_into" -> "transformed into" for edge labels / sidebar.
+function relationName(rel) { return rel ? String(rel).replace(/_/g, ' ') : ''; }
+function kindLabel(kind) {
+  return kind ? String(kind).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+
+// nodeRepulsion/idealEdgeLength below were hand-tuned for the glossary this
+// viewer originally shipped with (~35 nodes). Left fixed, a growing glossary
+// re-crowds the layout over time. Scaling both by sqrt(nodeCount) keeps node
+// density roughly constant as concepts are added (in 2D, linear spacing
+// needs to grow with the square root of node count to keep area-per-node
+// constant); clamped to never shrink below the original hand-tuned baseline
+// for smaller graphs.
+const spacingScale = Math.max(1, Math.sqrt(GRAPH.nodes.length / 35));
+
+const cy = cytoscape({
+  container: document.getElementById("cy"),
+  elements: GRAPH.nodes.concat(GRAPH.edges),
+  style: [
+    { selector: 'node[type="context"]', style: {
+        'shape': 'round-rectangle', 'background-color': ele => contextColor[ele.data('id')],
+        'label': 'data(label)', 'color': '#0f1115', 'font-size': 12, 'font-weight': 700,
+        'text-valign': 'center', 'text-halign': 'center', 'width': 150, 'height': 46,
+        'text-wrap': 'wrap', 'text-max-width': 140, 'border-width': 0
+    }},
+    { selector: 'node[type="concept"]', style: {
+        'shape': 'ellipse', 'background-color': colorForConcept,
+        'label': 'data(label)', 'color': '#e6e8eb', 'font-size': 10,
+        'text-valign': 'bottom', 'text-margin-y': 4,
+        'width': 34, 'height': 34, 'border-width': 2, 'border-color': '#0f1115'
+    }},
+    { selector: 'node[type="variant"]', style: {
+        'shape': 'ellipse', 'background-color': '#3a3f4b',
+        'label': 'data(label)', 'color': '#9aa1ac', 'font-size': 8,
+        'text-valign': 'bottom', 'text-margin-y': 3,
+        'width': 14, 'height': 14, 'border-width': 1, 'border-color': '#555'
+    }},
+    { selector: 'node[severity="high"]', style: { 'background-color': '#e85d5d' }},
+    { selector: 'node[severity="medium"]', style: { 'background-color': '#e8b34d' }},
+    // Concept shape encodes the socio-technical kind (color still encodes owning
+    // context); work_object keeps the default ellipse. More specific + later than
+    // the base concept selector, so these win on shape.
+    { selector: 'node[kind="person"]', style: { 'shape': 'star', 'width': 32, 'height': 32 }},
+    { selector: 'node[kind="group"]', style: { 'shape': 'hexagon', 'width': 38, 'height': 34 }},
+    { selector: 'node[kind="system"]', style: { 'shape': 'diamond', 'width': 40, 'height': 40 }},
+    { selector: 'node[kind="event"]', style: { 'shape': 'triangle', 'width': 30, 'height': 30 }},
+    // Shared-kernel concepts (spanning >= 3 contexts) get a gold ring -- the
+    // loudest cross-team coupling signal on the map. Truthy-attribute selector,
+    // placed last among node selectors so it wins on border regardless of kind.
+    { selector: 'node[?shared_kernel]', style: { 'border-width': 4, 'border-color': '#ffd166' }},
+    { selector: 'edge[type="relates_to"]', style: {
+        'width': 2, 'line-color': '#c792ea', 'target-arrow-color': '#c792ea',
+        'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'opacity': 0.9,
+        'label': ele => relationName(ele.data('relation')), 'font-size': 8,
+        'color': '#c7b6e6', 'text-rotation': 'autorotate',
+        'text-background-color': '#0f1115', 'text-background-opacity': 0.75,
+        'text-background-padding': 2
+    }},
+    { selector: 'edge[type="belongs_to"]', style: {
+        'width': 2, 'line-color': '#3a3f4b', 'curve-style': 'bezier', 'opacity': 0.6
+    }},
+    { selector: 'edge[type="used_in"]', style: {
+        'width': 1.5, 'line-style': 'dashed', 'line-color': '#556', 'curve-style': 'bezier', 'opacity': 0.5
+    }},
+    { selector: 'edge[type="translates_to"]', style: {
+        'width': 2.5, 'line-color': '#5aa9ff', 'target-arrow-color': '#5aa9ff',
+        'target-arrow-shape': 'triangle', 'curve-style': 'bezier', 'opacity': 0.85
+    }},
+    { selector: 'edge[type="drift_of"]', style: {
+        'width': 1, 'line-style': 'dotted', 'line-color': '#6a6f78', 'curve-style': 'bezier', 'opacity': 0.5
+    }},
+    { selector: '.faded', style: { 'opacity': 0.08 }},
+    { selector: '.highlighted', style: { 'opacity': 1 }},
+  ],
+  layout: (typeof cytoscapeCoseBilkent !== 'undefined')
+    ? { name: 'cose-bilkent', animate: false, nodeRepulsion: 9000 * spacingScale, idealEdgeLength: 90 * spacingScale }
+    : { name: 'cose', animate: false },
+  wheelSensitivity: 0.2,
+});
+
+let driftVisible = true;
+
+function updateDriftVisibility() {
+  cy.nodes('[type="variant"]').style('display', driftVisible ? 'element' : 'none');
+  cy.edges('[type="drift_of"]').style('display', driftVisible ? 'element' : 'none');
+}
+
+document.getElementById('toggle-drift').addEventListener('click', (e) => {
+  driftVisible = !driftVisible;
+  e.target.classList.toggle('active', driftVisible);
+  updateDriftVisibility();
+});
+
+document.getElementById('reset-view').addEventListener('click', () => {
+  cy.elements().removeClass('faded highlighted');
+  cy.fit(undefined, 40);
+});
+
+// Sidebar entries that name another node (a context, concept, or drift
+// variant) are rendered with these so they're clickable -- clicking one
+// selects that node in the 2D view exactly like clicking it in the graph
+// would. Mirrors build_graph_3d.py's nodeRefTag/nodeRefLi.
+function nodeRefTag(id, label) {
+  return `<span class="tag node-link" data-node-id="${escapeHtml(id)}">${escapeHtml(label)}</span>`;
+}
+function nodeRefLi(id, innerHtml) {
+  return `<li class="node-link" data-node-id="${escapeHtml(id)}">${innerHtml}</li>`;
+}
+
+function renderContext(node) {
+  const d = node.data();
+  const members = cy.nodes('[type="concept"]').filter(n => n.data('owning_context') === d.id);
+  let out = `<h2>${escapeHtml(d.label)}</h2><div class="tag">context ${escapeHtml(d.id)}</div>`;
+  out += `<div class="def">${escapeHtml(d.description)}</div>`;
+  out += `<h3>Concepts owned here (${members.length})</h3><ul class="plain">`;
+  members.forEach(m => out += nodeRefLi(m.id(), escapeHtml(m.data('label'))));
+  out += `</ul>`;
+  showSidebar(out);
+}
+
+function renderConcept(node) {
+  const d = node.data();
+  let out = `<h2>${escapeHtml(d.label)}</h2>`;
+  if (d.kind) out += `<div class="tag">${escapeHtml(kindLabel(d.kind))}</div>`;
+  if (d.shared_kernel) out += `<div class="tag" style="background:#4a3b00;color:#ffd166;">Shared kernel &middot; ${d.coupling} contexts</div>`;
+  out += `<div class="def">${escapeHtml(d.definition)}</div>`;
+  out += `<h3>Owning context</h3>${nodeRefTag(d.owning_context, contextName(d.owning_context))}`;
+  const rels = node.connectedEdges('[type="relates_to"]');
+  if (rels.length) {
+    out += `<h3>Relationships</h3><ul class="plain">`;
+    rels.forEach(e => {
+      const outgoing = e.source().id() === d.id;
+      const other = outgoing ? e.target() : e.source();
+      const verb = escapeHtml(relationName(e.data('relation')));
+      out += outgoing
+        ? `<li><span class="muted">${verb} &rarr;</span> ${nodeRefTag(other.id(), other.data('label'))}`
+        : `<li>${nodeRefTag(other.id(), other.data('label'))} <span class="muted">&rarr; ${verb} this</span>`;
+      if (e.data('note')) out += `<br><span class="muted">${escapeHtml(e.data('note'))}</span>`;
+      out += `</li>`;
+    });
+    out += `</ul>`;
+  }
+  if (d.appears_in_contexts && d.appears_in_contexts.length > 1) {
+    out += `<h3>Also appears in</h3>`;
+    d.appears_in_contexts.forEach(c => { if (c !== d.owning_context) out += nodeRefTag(c, contextName(c)); });
+  }
+  if (d.aliases && d.aliases.length) {
+    out += `<h3>Aliases observed</h3>`;
+    d.aliases.forEach(a => out += `<span class="tag">${escapeHtml(a)}</span>`);
+  }
+  if (d.context_overrides && d.context_overrides.length) {
+    out += `<h3>Context overrides</h3><ul class="plain">`;
+    d.context_overrides.forEach(o => {
+      const kindLabel = o.kind === 'accidental_drift' ? 'accidental drift' : 'legitimate translation';
+      out += `<li>${nodeRefTag(o.context, contextName(o.context))} uses <strong>${escapeHtml(o.local_term)}</strong> <span class="muted">(${kindLabel})</span>`;
+      if (o.reason) out += `<br><span class="muted">${escapeHtml(o.reason)}</span>`;
+      out += `</li>`;
+    });
+    out += `</ul>`;
+  }
+  if (d.homonyms && d.homonyms.length) {
+    d.homonyms.forEach(h => {
+      const otherMeanings = h.meanings.filter(m => m.concept_id !== d.id);
+      if (!otherMeanings.length) return;
+      out += `<h3>Homonym: "${escapeHtml(h.term)}"</h3><div class="muted">Also means, elsewhere:</div><ul class="plain">`;
+      otherMeanings.forEach(m => {
+        out += nodeRefLi(m.concept_id, `${nodeRefTag(m.context, contextName(m.context))} ${escapeHtml(m.definition)}`);
+      });
+      out += `</ul>`;
+    });
+  }
+  if (d.appears_in_stories && d.appears_in_stories.length) {
+    out += `<h3>Source stories</h3><ul class="plain">`;
+    d.appears_in_stories.forEach(s => out += `<li>${escapeHtml(storyTitle(s))}</li>`);
+    out += `</ul>`;
+  }
+  const driftNeighbors = node.connectedEdges('[type="drift_of"]');
+  if (driftNeighbors.length) {
+    out += `<h3>Drift variants</h3><ul class="plain">`;
+    driftNeighbors.forEach(e => {
+      const vnode = e.source().data('type') === 'variant' ? e.source() : e.target();
+      const sev = vnode.data('severity');
+      out += nodeRefLi(vnode.id(), `<span class="sev-${sev}">&#9679;</span> ${escapeHtml(vnode.data('label'))} <span class="muted">(${sev})</span>`);
+    });
+    out += `</ul>`;
+  }
+  const translations = node.connectedEdges('[type="translates_to"]');
+  if (translations.length) {
+    out += `<h3>Boundary translations</h3><ul class="plain">`;
+    translations.forEach(e => {
+      out += `<li>${nodeRefTag(e.data('from_context'), contextName(e.data('from_context')))} &rarr; ${nodeRefTag(e.data('to_context'), contextName(e.data('to_context')))}<br>${escapeHtml(e.data('from_term'))} &rarr; ${escapeHtml(e.data('to_term'))}`;
+      if (e.data('note')) out += `<br><span class="muted">${escapeHtml(e.data('note'))}</span>`;
+      out += `</li>`;
+    });
+    out += `</ul>`;
+  }
+  showSidebar(out);
+}
+
+function renderVariant(node) {
+  const d = node.data();
+  let out = `<h2>${escapeHtml(d.label)}</h2><div class="tag sev-${d.severity}">${escapeHtml(d.severity)} severity</div>`;
+  out += `<div class="def">${escapeHtml(d.suggested_fix)}</div>`;
+  out += `<h3>Why</h3><div class="def muted">${escapeHtml(d.severity_rationale)}</div>`;
+  showSidebar(out);
+}
+
+// Selects a node exactly the way tapping it in the 2D view does -- shared
+// by the graph's own tap handler and by clicks on node-referencing sidebar
+// entries (see nodeRefTag/nodeRefLi above) so the two entry points stay in
+// sync, mirroring build_graph_3d.py's selectNode. opts.skipHistory is set
+// by sidebarHistory's registered '2d' selector (Back/Forward buttons
+// replaying a past selection) so it doesn't push a fresh entry back onto
+// the stack it's currently stepping through.
+function selectNode(node, opts) {
+  const neighborhood = node.closedNeighborhood();
+  cy.elements().addClass('faded').removeClass('highlighted');
+  neighborhood.removeClass('faded').addClass('highlighted');
+
+  const type = node.data('type');
+  if (type === 'context') renderContext(node);
+  else if (type === 'concept') renderConcept(node);
+  else if (type === 'variant') renderVariant(node);
+
+  if (!opts || !opts.skipHistory) sidebarHistory.push('2d', node.id());
+
+  cy.animate({ center: { eles: node } }, { duration: 400 });
+}
+
+// Lets sidebarHistory (viewer_shell.py) replay a Back/Forward step that was
+// pushed while this was the active engine -- in the combined tabbed viewer,
+// stepping onto an id 3D pushed returns false here so goTo() leaves it to
+// the 3D engine's own registered selector instead.
+sidebarHistory.registerEngine('2d', (id) => {
+  const node = cy.getElementById(id);
+  if (!node || !node.length) return false;
+  selectNode(node, { skipHistory: true });
+  return true;
+});
+
+// Plain-language reference for the Legend button (sidebarHistory in
+// viewer_shell.py), written for someone with no domain-modeling background
+// -- computed fresh from GRAPH each time so it only ever explains things
+// actually present in this graph (e.g. no drift-variant entry if this
+// domain's JSON has no drift_report at all). Mirrors build_graph_3d.py's
+// buildLegendHtml(), except shape (not an emoji glyph) is what actually
+// distinguishes a concept's kind here -- see the shape selectors above.
+const SHAPE_GLYPH = { person: '\u2605', group: '\u2b21', system: '\u25c6', event: '\u25b2', work_object: '\u25cf' };
+const KIND_EXPLAIN = {
+  person: 'An individual person or role mentioned in the domain.',
+  group: 'A team or organizational group.',
+  system: 'A technical system or service.',
+  work_object: 'A "thing" being created, moved, or acted on -- a document, request, record, and so on.',
+  event: 'Something that happens at a point in time -- a trigger or occurrence.'
+};
+const LINK_EXPLAIN = {
+  relates_to: { color: '#c792ea', style: 'solid', arrow: true, text: 'These two concepts are directly related in the domain (e.g. one causes or depends on the other). Hover a line to see exactly how.' },
+  translates_to: { color: '#5aa9ff', style: 'solid', arrow: true, text: 'A boundary translation -- the same idea is called something different once it crosses into another context.' },
+  belongs_to: { color: '#3a3f4b', style: 'solid', arrow: false, text: 'Ownership -- this concept belongs to (is defined by) this context.' },
+  used_in: { color: '#556', style: 'dashed', arrow: false, text: 'This concept is also used inside a context that doesn\'t own it.' },
+  drift_of: { color: '#6a6f78', style: 'dotted', arrow: false, text: 'Links a drift variant back to the concept it diverges from.' }
+};
+const SEV_COLOR = { high: '#e85d5d', medium: '#e8b34d' };
+const SEV_LABEL = { high: 'high', medium: 'medium', low: 'low' };
+
+function legendRow(swatchHtml, bodyHtml) {
+  return `<div class="legend-row">${swatchHtml || ''}<div>${bodyHtml}</div></div>`;
+}
+function legendDot(color) {
+  return `<span class="legend-swatch legend-dot" style="background:${color};"></span>`;
+}
+function legendLine(color, style) {
+  return `<span class="legend-swatch legend-line" style="border-top-color:${color};border-top-style:${style};"></span>`;
+}
+// Small details a swatch alone can be easy to miss (a dashed vs. dotted vs.
+// solid line, an arrowhead) -- spelled out in words so they don't rely on
+// spotting a subtle visual difference, same reasoning as the arrow caption
+// this already had before line style got one too.
+function legendCaptions(info) {
+  const parts = [];
+  if (info.style === 'dashed' || info.style === 'dotted') parts.push(info.style + ' line');
+  if (info.arrow) parts.push('arrow shows direction');
+  return parts.length ? ` <span class="muted">(${parts.join('; ')})</span>` : '';
+}
+
+function buildLegendHtml() {
+  const contexts = GRAPH.nodes.filter(n => n.data.type === 'context').map(n => n.data);
+  const concepts = GRAPH.nodes.filter(n => n.data.type === 'concept').map(n => n.data);
+  const variants = GRAPH.nodes.filter(n => n.data.type === 'variant').map(n => n.data);
+  const presentKinds = Array.from(new Set(concepts.map(n => n.kind).filter(Boolean)));
+  const hasSharedKernel = concepts.some(n => n.shared_kernel);
+  const presentLinkTypes = Array.from(new Set(GRAPH.edges.map(e => e.data.type))).filter(t => LINK_EXPLAIN[t]);
+  const presentSeverities = Array.from(new Set(variants.map(n => n.severity).filter(Boolean)));
+
+  let out = '<h2>Legend</h2><div class="def muted">What the colors, shapes, and lines in this diagram mean.</div>';
+
+  out += '<h3>Contexts</h3>';
+  out += `<div class="def">Each <strong>context</strong> -- a team or part of the business with its own consistent vocabulary -- gets its own color, shown as a rounded box:</div>`;
+  contexts.forEach(c => { out += legendRow(legendDot(contextColor[c.id] || '#5aa9ff'), escapeHtml(c.label)); });
+
+  out += '<h3>Concepts</h3>';
+  out += legendRow('', 'A <strong>concept</strong> -- a term from the shared vocabulary, shown as a circle -- is colored the same as whichever context owns it. Match its color to the list above to see which context defines it.');
+  if (hasSharedKernel) {
+    out += legendRow('', 'A gold ring around a concept means it\'s used consistently across several contexts (3 or more) instead of belonging to just one -- sometimes called a "shared kernel".');
+  }
+  if (variants.length) {
+    const sevTags = presentSeverities.map(s => `<span class="tag" style="background:${SEV_COLOR[s] || '#3a3f4b'};color:#0f1115;">${escapeHtml(SEV_LABEL[s] || s)}</span>`).join(' ');
+    out += legendRow('', `A small circle is a <strong>drift variant</strong> -- a different word people actually used for a concept that clashes with its canonical name -- colored by how severe the mismatch is: ${sevTags}`);
+  }
+
+  if (presentKinds.length) {
+    out += '<h3>What kind of thing a concept represents</h3>';
+    presentKinds.forEach(k => {
+      out += legendRow('', `<span class="legend-swatch">${SHAPE_GLYPH[k] || ''}</span> <strong>${escapeHtml(kindLabel(k))}</strong> -- ${escapeHtml(KIND_EXPLAIN[k] || '')}`);
+    });
+  }
+
+  if (presentLinkTypes.length) {
+    out += '<h3>Connections</h3>';
+    presentLinkTypes.forEach(t => {
+      const info = LINK_EXPLAIN[t];
+      out += legendRow(legendLine(info.color, info.style), escapeHtml(info.text) + legendCaptions(info));
+    });
+  }
+
+  out += '<h3>Clicking a node</h3>';
+  out += '<div class="def">Everything not directly connected fades out, while the connected nodes and lines stay fully visible -- so you can see at a glance what\'s linked to what you selected.</div>';
+
+  return out;
+}
+sidebarHistory.registerLegend('2d', buildLegendHtml);
+
+cy.on('tap', 'node', (evt) => selectNode(evt.target));
+
+cy.on('tap', (evt) => {
+  if (evt.target === cy) {
+    cy.elements().removeClass('faded highlighted');
+    showSidebar('<div class="empty">Click a concept or context to see details.<br><br>Drag to pan, scroll to zoom.</div>');
+  }
+});
+
+document.getElementById('sidebar').addEventListener('click', (e) => {
+  // In the combined tabbed viewer (build_viewer.py), 3D's identical listener
+  // is also attached to this same #sidebar -- both engines share every node
+  // id, so without this guard a single click would fire both, pushing two
+  // history entries for what the user experienced as one navigation step.
+  // #cy only ever carries 'view-hidden' inside that combined viewer; in the
+  // standalone 2D viewer this class never exists, so the guard is a no-op
+  // there.
+  if (document.getElementById('cy').classList.contains('view-hidden')) return;
+  const el = e.target.closest('[data-node-id]');
+  if (!el) return;
+  const node = cy.getElementById(el.dataset.nodeId);
+  if (node && node.length) selectNode(node);
+});
+
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { cy.elements().removeClass('faded highlighted'); return; }
+  const matches = cy.nodes().filter(n => n.data('label').toLowerCase().includes(q));
+  cy.elements().addClass('faded').removeClass('highlighted');
+  matches.closedNeighborhood().removeClass('faded').addClass('highlighted');
+});
+}
+init2D();
+
+
+const DATA = {"nodes": [{"id": "C1", "type": "context", "label": "Branch Channel", "description": "Front-office branch operations where Personal Bankers interact with Applicants, collect documents, and submit applications."}, {"id": "C2", "type": "context", "label": "Digital Channel", "description": "Digital/mobile app channel where Applicants self-serve to fill in details and submit cases for account opening."}, {"id": "C3", "type": "context", "label": "Compliance", "description": "Mid-office compliance operations including KYC review, watchlist screening, and identity verification."}, {"id": "C4", "type": "context", "label": "Fraud", "description": "Fraud risk assessment operations including risk scoring, threshold comparison, and manual override queue."}, {"id": "C5", "type": "context", "label": "Core Banking", "description": "Core banking system responsible for creating deposit accounts, ledger records, and publishing account-opened events."}, {"id": "C6", "type": "context", "label": "Notification", "description": "Notification service responsible for sending communications (emails) to applicants."}, {"id": "personal_banker", "type": "concept", "label": "Personal Banker", "kind": "person", "definition": "A bank employee who collects applicant information, keys applications, and interacts with customers in the branch channel.", "owning_context": "C1", "aliases": ["Personal Banker"], "appears_in_contexts": ["C1", "C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 4, "shared_kernel": true, "context_overrides": [], "homonyms": []}, {"id": "applicant", "type": "concept", "label": "Applicant", "kind": "person", "definition": "A person applying to open a deposit account, providing personal details, ID, SSN, proof of address, and initial deposit.", "owning_context": "C1", "aliases": ["Applicant"], "appears_in_contexts": ["C1", "C2", "C3", "C4", "C5", "C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 6, "shared_kernel": true, "context_overrides": [], "homonyms": []}, {"id": "compliance_analyst", "type": "concept", "label": "Compliance Analyst", "kind": "person", "definition": "A compliance team member who reviews screening results, documents KYC Cases, holds cases for fraud review, and approves cases.", "owning_context": "C3", "aliases": ["Compliance Analyst"], "appears_in_contexts": ["C3", "C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "compliance_ops_lead", "type": "concept", "label": "Compliance Ops Lead", "kind": "person", "definition": "A senior compliance team member who pulls stalled KYC Cases, compares risk scores against thresholds, and releases cases back for approval.", "owning_context": "C3", "aliases": ["Compliance Ops Lead"], "appears_in_contexts": ["C3", "C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "fraud_analyst", "type": "concept", "label": "Fraud Analyst", "kind": "person", "definition": "A fraud team member who monitors risk scores, compares them against thresholds, places cases into manual override queue, and can freeze/close deposit accounts.", "owning_context": "C4", "aliases": ["Fraud Analyst"], "appears_in_contexts": ["C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "core_banking_ops_analyst", "type": "concept", "label": "Core Banking Ops Analyst", "kind": "person", "definition": "A core banking operations team member who may create deposit accounts in the Core Banking System.", "owning_context": "C5", "aliases": ["Core Banking Ops Analyst"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "screening_engine", "type": "concept", "label": "Screening Engine", "kind": "system", "definition": "A system that runs applicant data against watchlists and produces screening results.", "owning_context": "C3", "aliases": ["Screening Engine"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "fraud_engine", "type": "concept", "label": "Fraud Engine", "kind": "system", "definition": "A system that produces risk scores for KYC Cases or Applications flagged for unusual funding.", "owning_context": "C4", "aliases": ["Fraud Engine"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "core_banking_system", "type": "concept", "label": "Core Banking System", "kind": "system", "definition": "The central banking system that creates deposit accounts, generates ledger records, and publishes account-opened events.", "owning_context": "C5", "aliases": ["Core Banking System"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "notification_service", "type": "concept", "label": "Notification Service", "kind": "system", "definition": "A system that picks up account-opened events and sends notification emails to applicants.", "owning_context": "C6", "aliases": ["Notification Service"], "appears_in_contexts": ["C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "branch_system", "type": "concept", "label": "Branch System", "kind": "system", "definition": "The system used in the branch channel where Personal Bankers key and submit applications.", "owning_context": "C1", "aliases": ["Branch System"], "appears_in_contexts": ["C1"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "digital_app", "type": "concept", "label": "Digital App", "kind": "system", "definition": "The mobile application through which Applicants self-submit their details for account opening in the digital channel.", "owning_context": "C2", "aliases": ["Digital App"], "appears_in_contexts": ["C2"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "compliance_system", "type": "concept", "label": "Compliance System", "kind": "system", "definition": "The system that manages compliance workflows, converts Applications/Cases into KYC Cases, and hands them to Core Banking.", "owning_context": "C3", "aliases": ["Compliance System"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "third_party_verification_service", "type": "concept", "label": "Third-Party Verification Service", "kind": "system", "definition": "An external system that performs identity verification on KYC Cases.", "owning_context": "C3", "aliases": ["Third-Party Verification Service"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-compliance-kyc-review.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "application", "type": "concept", "label": "Application", "kind": "work_object", "definition": "The initial document/record containing applicant details (ID, SSN, proof of address, initial deposit) collected and submitted in the branch channel.", "owning_context": "C1", "aliases": ["Application", "the form", "application"], "appears_in_contexts": ["C1", "C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 4, "shared_kernel": true, "context_overrides": [], "homonyms": [{"term": "Application", "meanings": [{"context": "C1", "concept_id": "application", "definition": "The initial document collected by the Personal Banker in the branch channel containing applicant details."}, {"context": "C5", "concept_id": "kyc_case", "definition": "Used incorrectly in story-core-banking-account-opening.md to refer to the compliance-reviewed work object that should be called KYC Case."}], "is_boundary_signal": true}]}, {"id": "case_digital", "type": "concept", "label": "Case", "kind": "work_object", "definition": "The initial document/record containing applicant details created through the Digital App in the digital channel.", "owning_context": "C2", "aliases": ["Case", "the case"], "appears_in_contexts": ["C2", "C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": [{"term": "Case", "meanings": [{"context": "C2", "concept_id": "case_digital", "definition": "The initial document created by the Applicant through the Digital App in the digital channel."}, {"context": "C3", "concept_id": "kyc_case", "definition": "Used as an alias/short form for KYC Case within Compliance context."}], "is_boundary_signal": true}]}, {"id": "kyc_case", "type": "concept", "label": "KYC Case", "kind": "work_object", "definition": "The standardized compliance record created from an Application or Case, used for screening, fraud assessment, and approval workflow.", "owning_context": "C3", "aliases": ["KYC Case", "KYC file", "the file", "case", "K.Y.C. Case"], "appears_in_contexts": ["C3", "C4", "C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md"], "proposed": false, "coupling": 3, "shared_kernel": true, "context_overrides": [{"concept_id": "kyc_case", "context": "C5", "local_term": "Application", "global_canonical_term": "KYC Case", "kind": "accidental_drift", "reason": "In story-core-banking-account-opening.md (Core Banking context), the work object is consistently called 'Application' even after it has been through compliance review and should be a KYC Case. This is intra-context inconsistency within the Compliance-to-Core-Banking handoff."}, {"concept_id": "kyc_case", "context": "C4", "local_term": "Application", "global_canonical_term": "KYC Case", "kind": "accidental_drift", "reason": "In story-post-account-fraud-reversal.md, the Compliance Analyst sends an 'Application' to the Fraud Engine, but in other stories (story-fraud-risk-scoring.md) the same handoff uses 'KYC Case'. This is synonym drift within the Fraud context."}], "homonyms": [{"term": "Application", "meanings": [{"context": "C1", "concept_id": "application", "definition": "The initial document collected by the Personal Banker in the branch channel containing applicant details."}, {"context": "C5", "concept_id": "kyc_case", "definition": "Used incorrectly in story-core-banking-account-opening.md to refer to the compliance-reviewed work object that should be called KYC Case."}], "is_boundary_signal": true}, {"term": "Case", "meanings": [{"context": "C2", "concept_id": "case_digital", "definition": "The initial document created by the Applicant through the Digital App in the digital channel."}, {"context": "C3", "concept_id": "kyc_case", "definition": "Used as an alias/short form for KYC Case within Compliance context."}], "is_boundary_signal": true}]}, {"id": "screening_result", "type": "concept", "label": "Screening Result", "kind": "work_object", "definition": "Output from the Screening Engine indicating whether the applicant matched any watchlist entries.", "owning_context": "C3", "aliases": ["Screening Result"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "risk_score", "type": "concept", "label": "Risk Score", "kind": "work_object", "definition": "A numeric value generated by the Fraud Engine indicating the likelihood of fraud for a given case.", "owning_context": "C4", "aliases": ["Risk Score"], "appears_in_contexts": ["C4", "C3"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "risk_threshold_table", "type": "concept", "label": "Risk Threshold Table", "kind": "work_object", "definition": "A reference table defining acceptable risk score cutoffs per account type, used to determine if a case can proceed.", "owning_context": "C4", "aliases": ["Risk Threshold Table"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "deposit_account", "type": "concept", "label": "Deposit Account", "kind": "work_object", "definition": "The bank account record created in the Core Banking System ledger after KYC approval.", "owning_context": "C5", "aliases": ["Deposit Account", "account", "New Account Record"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "new_account_record", "type": "concept", "label": "New Account Record", "kind": "work_object", "definition": "The ledger record generated in the Core Banking System when a Deposit Account is created.", "owning_context": "C5", "aliases": ["New Account Record"], "appears_in_contexts": ["C5"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "account_opened_event", "type": "concept", "label": "Account Opened Event", "kind": "event", "definition": "An event published by the Core Banking System after a deposit account is created, consumed by the Notification Service.", "owning_context": "C5", "aliases": ["Account Opened Event", "Account Opened event"], "appears_in_contexts": ["C5", "C6"], "appears_in_stories": ["story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 2, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "notification", "type": "concept", "label": "Notification", "kind": "work_object", "definition": "An email communication sent to the Applicant regarding account opening.", "owning_context": "C6", "aliases": ["Notification", "Confirmation Email"], "appears_in_contexts": ["C6"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [{"concept_id": "notification", "context": "C6", "local_term": "Confirmation Email", "global_canonical_term": "Notification", "kind": "accidental_drift", "reason": "In story-core-banking-account-opening.md, the Notification Service sends a 'Confirmation Email' instead of a 'Notification'. Both refer to the same email sent to the Applicant."}], "homonyms": []}, {"id": "welcome_packet", "type": "concept", "label": "Welcome Packet", "kind": "work_object", "definition": "A printed document given to the Applicant by the Personal Banker after account creation in the branch channel.", "owning_context": "C1", "aliases": ["Welcome Packet", "paperwork copy"], "appears_in_contexts": ["C1"], "appears_in_stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "watchlist", "type": "concept", "label": "Watchlist", "kind": "work_object", "definition": "A reference list of subjects/entities used by the Screening Engine to check applicants against.", "owning_context": "C3", "aliases": ["Watchlist"], "appears_in_contexts": ["C3"], "appears_in_stories": ["story-digital-account-application-submission.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "manual_override_queue", "type": "concept", "label": "Manual Override Queue", "kind": "work_object", "definition": "A queue where KYC Cases are placed by the Fraud Analyst when the Risk Score exceeds the threshold, for further manual review.", "owning_context": "C4", "aliases": ["manual override queue"], "appears_in_contexts": ["C4"], "appears_in_stories": ["story-fraud-risk-scoring.md"], "proposed": false, "coupling": 1, "shared_kernel": false, "context_overrides": [], "homonyms": []}, {"id": "variant--kyc_case--1", "type": "variant", "label": "K.Y.C. Case", "severity": "medium", "context": "C3", "stories": ["story-compliance-kyc-review.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}, {"id": "variant--kyc_case--2", "type": "variant", "label": "KYC file", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}, {"id": "variant--kyc_case--3", "type": "variant", "label": "the file", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}, {"id": "variant--kyc_case--4", "type": "variant", "label": "case", "severity": "medium", "context": "C3", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.", "severity_rationale": "Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear."}, {"id": "variant--kyc_case--0", "type": "variant", "label": "Application", "severity": "high", "context": "C5", "stories": ["story-core-banking-account-opening.md"], "drift_type": "intra_context_inconsistency", "suggested_fix": "In story-core-banking-account-opening.md, the work object received by Core Banking System is called 'Application' but should be 'KYC Case' to match the other stories and the compliance-to-core-banking handoff.", "severity_rationale": "Using 'Application' instead of 'KYC Case' in Core Banking context could lead to data model confusion \u2014 the object arriving at Core Banking has already been through compliance review and is semantically a KYC Case, not the raw Application."}, {"id": "variant--notification--1", "type": "variant", "label": "Confirmation Email", "severity": "low", "context": "C6", "stories": ["story-core-banking-account-opening.md"], "drift_type": "synonym_drift", "suggested_fix": "Standardise on 'Notification' across all stories; 'Confirmation Email' is a more specific term that can be kept as an alias but the canonical term should be consistent.", "severity_rationale": "Both terms clearly refer to the same email sent to the applicant; the difference is cosmetic and unlikely to cause implementation errors."}, {"id": "variant--deposit_account--1", "type": "variant", "label": "New Account Record", "severity": "medium", "context": "C5", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "drift_type": "synonym_drift", "suggested_fix": "Clarify whether 'New Account Record' is the same as 'Deposit Account' or a separate ledger entry. If they are the same, standardise on 'Deposit Account'. If distinct, define both separately.", "severity_rationale": "Ambiguity between 'Deposit Account' and 'New Account Record' could lead to confusion about whether they are the same object or two different artefacts (the account vs. the ledger record)."}, {"id": "variant--deposit_account--2", "type": "variant", "label": "account", "severity": "medium", "context": "C5", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"], "drift_type": "synonym_drift", "suggested_fix": "Clarify whether 'New Account Record' is the same as 'Deposit Account' or a separate ledger entry. If they are the same, standardise on 'Deposit Account'. If distinct, define both separately.", "severity_rationale": "Ambiguity between 'Deposit Account' and 'New Account Record' could lead to confusion about whether they are the same object or two different artefacts (the account vs. the ledger record)."}], "links": [{"id": "personal_banker--belongs_to--C1", "type": "belongs_to", "source": "personal_banker", "target": "C1"}, {"id": "personal_banker--used_in--C3", "type": "used_in", "source": "personal_banker", "target": "C3"}, {"id": "personal_banker--used_in--C4", "type": "used_in", "source": "personal_banker", "target": "C4"}, {"id": "personal_banker--used_in--C5", "type": "used_in", "source": "personal_banker", "target": "C5"}, {"id": "applicant--belongs_to--C1", "type": "belongs_to", "source": "applicant", "target": "C1"}, {"id": "applicant--used_in--C2", "type": "used_in", "source": "applicant", "target": "C2"}, {"id": "applicant--used_in--C3", "type": "used_in", "source": "applicant", "target": "C3"}, {"id": "applicant--used_in--C4", "type": "used_in", "source": "applicant", "target": "C4"}, {"id": "applicant--used_in--C5", "type": "used_in", "source": "applicant", "target": "C5"}, {"id": "applicant--used_in--C6", "type": "used_in", "source": "applicant", "target": "C6"}, {"id": "compliance_analyst--belongs_to--C3", "type": "belongs_to", "source": "compliance_analyst", "target": "C3"}, {"id": "compliance_analyst--used_in--C4", "type": "used_in", "source": "compliance_analyst", "target": "C4"}, {"id": "compliance_ops_lead--belongs_to--C3", "type": "belongs_to", "source": "compliance_ops_lead", "target": "C3"}, {"id": "compliance_ops_lead--used_in--C4", "type": "used_in", "source": "compliance_ops_lead", "target": "C4"}, {"id": "fraud_analyst--belongs_to--C4", "type": "belongs_to", "source": "fraud_analyst", "target": "C4"}, {"id": "fraud_analyst--used_in--C5", "type": "used_in", "source": "fraud_analyst", "target": "C5"}, {"id": "core_banking_ops_analyst--belongs_to--C5", "type": "belongs_to", "source": "core_banking_ops_analyst", "target": "C5"}, {"id": "screening_engine--belongs_to--C3", "type": "belongs_to", "source": "screening_engine", "target": "C3"}, {"id": "fraud_engine--belongs_to--C4", "type": "belongs_to", "source": "fraud_engine", "target": "C4"}, {"id": "core_banking_system--belongs_to--C5", "type": "belongs_to", "source": "core_banking_system", "target": "C5"}, {"id": "notification_service--belongs_to--C6", "type": "belongs_to", "source": "notification_service", "target": "C6"}, {"id": "branch_system--belongs_to--C1", "type": "belongs_to", "source": "branch_system", "target": "C1"}, {"id": "digital_app--belongs_to--C2", "type": "belongs_to", "source": "digital_app", "target": "C2"}, {"id": "compliance_system--belongs_to--C3", "type": "belongs_to", "source": "compliance_system", "target": "C3"}, {"id": "third_party_verification_service--belongs_to--C3", "type": "belongs_to", "source": "third_party_verification_service", "target": "C3"}, {"id": "application--belongs_to--C1", "type": "belongs_to", "source": "application", "target": "C1"}, {"id": "application--used_in--C3", "type": "used_in", "source": "application", "target": "C3"}, {"id": "application--used_in--C4", "type": "used_in", "source": "application", "target": "C4"}, {"id": "application--used_in--C5", "type": "used_in", "source": "application", "target": "C5"}, {"id": "case_digital--belongs_to--C2", "type": "belongs_to", "source": "case_digital", "target": "C2"}, {"id": "case_digital--used_in--C3", "type": "used_in", "source": "case_digital", "target": "C3"}, {"id": "kyc_case--belongs_to--C3", "type": "belongs_to", "source": "kyc_case", "target": "C3"}, {"id": "kyc_case--used_in--C4", "type": "used_in", "source": "kyc_case", "target": "C4"}, {"id": "kyc_case--used_in--C5", "type": "used_in", "source": "kyc_case", "target": "C5"}, {"id": "screening_result--belongs_to--C3", "type": "belongs_to", "source": "screening_result", "target": "C3"}, {"id": "risk_score--belongs_to--C4", "type": "belongs_to", "source": "risk_score", "target": "C4"}, {"id": "risk_score--used_in--C3", "type": "used_in", "source": "risk_score", "target": "C3"}, {"id": "risk_threshold_table--belongs_to--C4", "type": "belongs_to", "source": "risk_threshold_table", "target": "C4"}, {"id": "deposit_account--belongs_to--C5", "type": "belongs_to", "source": "deposit_account", "target": "C5"}, {"id": "new_account_record--belongs_to--C5", "type": "belongs_to", "source": "new_account_record", "target": "C5"}, {"id": "account_opened_event--belongs_to--C5", "type": "belongs_to", "source": "account_opened_event", "target": "C5"}, {"id": "account_opened_event--used_in--C6", "type": "used_in", "source": "account_opened_event", "target": "C6"}, {"id": "notification--belongs_to--C6", "type": "belongs_to", "source": "notification", "target": "C6"}, {"id": "welcome_packet--belongs_to--C1", "type": "belongs_to", "source": "welcome_packet", "target": "C1"}, {"id": "watchlist--belongs_to--C3", "type": "belongs_to", "source": "watchlist", "target": "C3"}, {"id": "manual_override_queue--belongs_to--C4", "type": "belongs_to", "source": "manual_override_queue", "target": "C4"}, {"id": "rel-0", "type": "relates_to", "relation": "produces", "note": "Personal Banker collects, keys, and submits the Application.", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"], "source": "personal_banker", "target": "application"}, {"id": "rel-1", "type": "relates_to", "relation": "produces", "note": "Applicant fills in the Case into the Digital App.", "stories": ["story-digital-account-application-submission.md"], "source": "applicant", "target": "case_digital"}, {"id": "rel-2", "type": "relates_to", "relation": "produces", "note": "Digital App submits the Case to the Compliance System.", "stories": ["story-digital-account-application-submission.md"], "source": "digital_app", "target": "case_digital"}, {"id": "rel-3", "type": "relates_to", "relation": "transformed_into", "note": "The Application is converted into a KYC Case at the point of submission to the Screening Engine or Compliance System.", "stories": ["story-compliance-kyc-review.md", "story-digital-account-application-submission.md"], "source": "application", "target": "kyc_case"}, {"id": "rel-4", "type": "relates_to", "relation": "transformed_into", "note": "The Case from the Digital App is converted into a KYC Case by the Compliance System.", "stories": ["story-digital-account-application-submission.md"], "source": "case_digital", "target": "kyc_case"}, {"id": "rel-5", "type": "relates_to", "relation": "produces", "note": "Screening Engine runs the Subject against the Watchlist and produces a Screening Result.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "source": "screening_engine", "target": "screening_result"}, {"id": "rel-6", "type": "relates_to", "relation": "depends_on", "note": "Screening Result is reviewed by Compliance Analyst and documented on the KYC Case.", "stories": ["story-branch-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "source": "screening_result", "target": "kyc_case"}, {"id": "rel-7", "type": "relates_to", "relation": "produces", "note": "Compliance Analyst documents, holds, sends, and approves the KYC Case.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md"], "source": "compliance_analyst", "target": "kyc_case"}, {"id": "rel-8", "type": "relates_to", "relation": "produces", "note": "Fraud Engine produces a Risk Score for a KYC Case or Application.", "stories": ["story-branch-account-application-submission.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "source": "fraud_engine", "target": "risk_score"}, {"id": "rel-9", "type": "relates_to", "relation": "compared_against", "note": "Risk Score is compared against the Risk Threshold Table by the Fraud Analyst or Compliance Ops Lead.", "stories": ["story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-fraud-risk-scoring.md", "story-post-account-fraud-reversal.md"], "source": "risk_score", "target": "risk_threshold_table"}, {"id": "rel-10", "type": "relates_to", "relation": "produces", "note": "Fraud Analyst places KYC Case into the manual override queue if Risk Score exceeds threshold.", "stories": ["story-fraud-risk-scoring.md"], "source": "fraud_analyst", "target": "manual_override_queue"}, {"id": "rel-11", "type": "relates_to", "relation": "produces", "note": "Compliance Ops Lead pulls stalled KYC Cases and releases them back to Compliance Analyst.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "source": "compliance_ops_lead", "target": "kyc_case"}, {"id": "rel-12", "type": "relates_to", "relation": "sent_to", "note": "KYC Case is handed to Core Banking System after approval for account creation.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md"], "source": "kyc_case", "target": "core_banking_system"}, {"id": "rel-13", "type": "relates_to", "relation": "produces", "note": "Core Banking System creates the Deposit Account in the ledger.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "source": "core_banking_system", "target": "deposit_account"}, {"id": "rel-14", "type": "relates_to", "relation": "produces", "note": "Core Banking System generates a New Account Record in the ledger.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "source": "core_banking_system", "target": "new_account_record"}, {"id": "rel-15", "type": "relates_to", "relation": "produces", "note": "Core Banking System publishes an Account Opened Event after account creation.", "stories": ["story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md"], "source": "core_banking_system", "target": "account_opened_event"}, {"id": "rel-16", "type": "relates_to", "relation": "triggers", "note": "Notification Service picks up the Account Opened Event to send a notification.", "stories": ["story-core-banking-account-opening.md"], "source": "account_opened_event", "target": "notification_service"}, {"id": "rel-17", "type": "relates_to", "relation": "produces", "note": "Notification Service sends a Notification (email) to the Applicant.", "stories": ["story-branch-account-application-submission.md", "story-compliance-kyc-review.md", "story-core-banking-account-opening.md", "story-digital-account-application-submission.md", "story-escalation-of-stalled-kyc-cases.md", "story-post-account-fraud-reversal.md"], "source": "notification_service", "target": "notification"}, {"id": "rel-18", "type": "relates_to", "relation": "produces", "note": "Personal Banker prints a Welcome Packet for the Applicant.", "stories": ["story-branch-account-application-submission.md", "story-digital-account-application-submission.md"], "source": "personal_banker", "target": "welcome_packet"}, {"id": "rel-19", "type": "relates_to", "relation": "produces", "note": "Fraud Analyst manually freezes or closes the Deposit Account in the Core Banking System.", "stories": ["story-post-account-fraud-reversal.md"], "source": "fraud_analyst", "target": "deposit_account"}, {"id": "rel-20", "type": "relates_to", "relation": "depends_on", "note": "Screening Engine runs the Subject against the Watchlist.", "stories": ["story-digital-account-application-submission.md"], "source": "screening_engine", "target": "watchlist"}, {"id": "rel-21", "type": "relates_to", "relation": "produces", "note": "Third-Party Verification Service passes and flips the KYC Case status after identity verification.", "stories": ["story-compliance-kyc-review.md"], "source": "third_party_verification_service", "target": "kyc_case"}, {"id": "rel-22", "type": "relates_to", "relation": "produces", "note": "Compliance Analyst documents, holds, sends, and approves the Application (in stories where Application is used instead of KYC Case).", "stories": ["story-core-banking-account-opening.md", "story-post-account-fraud-reversal.md"], "source": "compliance_analyst", "target": "application"}, {"id": "rel-23", "type": "relates_to", "relation": "monitors", "note": "Compliance Ops Lead compares the Risk Score against the Risk Threshold Table.", "stories": ["story-post-account-fraud-reversal.md"], "source": "compliance_ops_lead", "target": "risk_score"}, {"id": "crossing-0", "type": "translates_to", "from_context": "C1", "to_context": "C3", "from_term": "Application", "to_term": "KYC Case", "note": "When the Application crosses from Branch Channel to Compliance, it is converted into a KYC Case \u2014 the primary compliance work object.", "source": "application", "target": "kyc_case"}, {"id": "crossing-1", "type": "translates_to", "from_context": "C2", "to_context": "C3", "from_term": "Case", "to_term": "KYC Case", "note": "When the Case crosses from Digital Channel to Compliance, it is converted into a KYC Case by the Compliance System.", "source": "case_digital", "target": "kyc_case"}, {"id": "crossing-2", "type": "translates_to", "from_context": "C3", "to_context": "C5", "from_term": "KYC Case", "to_term": "Deposit Account", "note": "After approval, the KYC Case is handed to Core Banking which creates a Deposit Account \u2014 the work object changes form and ownership.", "source": "kyc_case", "target": "deposit_account"}, {"id": "crossing-3", "type": "translates_to", "from_context": "C5", "to_context": "C6", "from_term": "Account Opened Event", "to_term": "Notification", "note": "The Core Banking System publishes an Account Opened Event which the Notification Service consumes to send a Notification to the Applicant.", "source": "account_opened_event", "target": "notification"}, {"id": "variant--kyc_case--1--drift_of--kyc_case", "type": "drift_of", "severity": "medium", "source": "variant--kyc_case--1", "target": "kyc_case"}, {"id": "variant--kyc_case--2--drift_of--kyc_case", "type": "drift_of", "severity": "medium", "source": "variant--kyc_case--2", "target": "kyc_case"}, {"id": "variant--kyc_case--3--drift_of--kyc_case", "type": "drift_of", "severity": "medium", "source": "variant--kyc_case--3", "target": "kyc_case"}, {"id": "variant--kyc_case--4--drift_of--kyc_case", "type": "drift_of", "severity": "medium", "source": "variant--kyc_case--4", "target": "kyc_case"}, {"id": "variant--kyc_case--0--drift_of--kyc_case", "type": "drift_of", "severity": "high", "source": "variant--kyc_case--0", "target": "kyc_case"}, {"id": "variant--kyc_case--1--drift_of--kyc_case", "type": "drift_of", "severity": "high", "source": "variant--kyc_case--1", "target": "kyc_case"}, {"id": "variant--notification--1--drift_of--notification", "type": "drift_of", "severity": "low", "source": "variant--notification--1", "target": "notification"}, {"id": "variant--deposit_account--1--drift_of--deposit_account", "type": "drift_of", "severity": "medium", "source": "variant--deposit_account--1", "target": "deposit_account"}, {"id": "variant--deposit_account--2--drift_of--deposit_account", "type": "drift_of", "severity": "medium", "source": "variant--deposit_account--2", "target": "deposit_account"}]};
+
+function initGraph3D() {
+
+const contextPalette = ["#5aa9ff","#f2994a","#bb6bd9","#6fcf97","#f2c94c","#eb5757","#56ccf2","#9b51e0","#27ae60","#f2994a"];
+const contextIds = DATA.nodes.filter(n => n.type === "context").map(n => n.id);
+const contextColor = {};
+contextIds.forEach((id, i) => contextColor[id] = contextPalette[i % contextPalette.length]);
+
+const contextLabel = {};
+DATA.nodes.filter(n => n.type === "context").forEach(n => { contextLabel[n.id] = n.label; });
+function contextName(id) {
+  return contextLabel[id] || id;
+}
+
+function storyTitle(filename) {
+  return String(filename)
+    .replace(/^story-/, '')
+    .replace(/\.md$/, '')
+    .split('-')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+// Socio-technical stereotype markers: a small glyph prefixed to a concept's
+// floating label so people / systems / work objects / events read apart at a
+// glance, without recoloring the node (color still encodes owning context).
+const KIND_GLYPH = { person: '\u{1F464}', group: '\u{1F465}', system: '\u2699', work_object: '\u{1F4C4}', event: '\u26A1' };
+function kindGlyph(kind) { return KIND_GLYPH[kind] || ''; }
+function kindLabel(kind) {
+  return kind ? String(kind).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '';
+}
+function nodeDisplayLabel(n) {
+  const g = n.type === 'concept' ? kindGlyph(n.kind) : '';
+  return g ? g + ' ' + n.label : n.label;
+}
+// "transformed_into" -> "transformed into" for edge tooltips / sidebar.
+function relationName(rel) { return rel ? String(rel).replace(/_/g, ' ') : ''; }
+
+function baseNodeColor(n) {
+  if (n.type === 'context') return contextColor[n.id] || '#5aa9ff';
+  if (n.type === 'concept') return contextColor[n.owning_context] || '#5aa9ff';
+  if (n.type === 'variant') {
+    if (n.severity === 'high') return '#e85d5d';
+    if (n.severity === 'medium') return '#e8b34d';
+    return '#4a4f5b';
+  }
+  return '#888';
+}
+
+// three-forcegraph's nodeOpacity/linkOpacity accessors are single global
+// values shared by every node/link, so per-item transparency (what "dim the
+// unselected rest of the graph" actually needs) isn't available that way.
+// Blending each dimmed item's color toward the scene background instead
+// gets the same faded-into-the-dark look without touching global opacity.
+const BACKGROUND_COLOR = '#05070a';
+const DIM_FACTOR = 0.85; // 0 = untouched color, 1 = fully background
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return m ? { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) } : null;
+}
+function blendToBackground(color, factor) {
+  const c = hexToRgb(color);
+  const bg = hexToRgb(BACKGROUND_COLOR);
+  if (!c || !bg) return color; // already non-hex (e.g. an rgb()/named color) -- leave as-is
+  const mix = (a, b) => Math.round(a + (b - a) * factor);
+  return `rgb(${mix(c.r, bg.r)}, ${mix(c.g, bg.g)}, ${mix(c.b, bg.b)})`;
+}
+
+// Wraps baseNodeColor/baseLinkColor: whenever a node is selected, anything
+// not the selected node itself or one of its direct edge-connected neighbors
+// (see labeledNodeIds, computed in highlightLinksFor) fades toward the
+// background so the selection reads as the visual focus.
+function nodeColor(n) {
+  const color = baseNodeColor(n);
+  if (selectedNodeId != null && !labeledNodeIds.has(n.id)) return blendToBackground(color, DIM_FACTOR);
+  return color;
+}
+
+function nodeSize(n) {
+  if (n.type === 'context') return 14;
+  // Concepts grow with how many contexts they span (coupling) -- a de-facto
+  // shared kernel reads as a big, central sphere. Single-context concepts keep
+  // the original size of 8; capped so the busiest concept can't dwarf the graph.
+  if (n.type === 'concept') return 6 + Math.min(n.coupling || 1, 6) * 2;
+  return 4;
+}
+
+// 3d-force-graph derives each node sphere's rendered radius from nodeVal via
+// cbrt(val) * nodeRelSize -- mirrored here so the floating name labels (see
+// labeledNodeIds below) clear the top of the sphere instead of overlapping it.
+const NODE_REL_SIZE = 6;
+function nodeRadius(n) {
+  return Math.cbrt(nodeSize(n)) * NODE_REL_SIZE;
+}
+
+function baseLinkColor(l) {
+  if (l.type === 'relates_to') return '#c792ea';
+  if (l.type === 'translates_to') return '#5aa9ff';
+  if (l.type === 'used_in') return '#556';
+  if (l.type === 'drift_of') return '#444';
+  return '#333';
+}
+
+function linkColor(l) {
+  const color = baseLinkColor(l);
+  if (selectedNodeId != null && !isHighlighted(l)) return blendToBackground(color, DIM_FACTOR);
+  return color;
+}
+
+// Links directly touching the most recently clicked node -- these get
+// traveling particles and a pulsing width, like traffic flowing out along
+// a highway from the clicked node.
+let highlightedLinkIds = new Set(); // canonical "a|b" keys, endpoint order independent
+let swappedLinks = []; // links whose source/target were flipped so particles flow outward
+let pulsePhase = 0;
+
+// The clicked node plus everything directly connected to it -- these get a
+// floating name label above the sphere so the selection reads at a glance.
+let labeledNodeIds = new Set();
+let selectedNodeId = null; // just the clicked node, so its label can stand out from its neighbors'
+let hoveredNodeId = null; // whatever's under the cursor right now, labeled the same way regardless of click selection
+
+function nodeIdOf(x) {
+  return (x && x.id !== undefined) ? x.id : x;
+}
+
+function linkKey(l) {
+  const s = nodeIdOf(l.source);
+  const t = nodeIdOf(l.target);
+  return s < t ? s + '|' + t : t + '|' + s;
+}
+
+function isHighlighted(l) {
+  return highlightedLinkIds.has(linkKey(l));
+}
+
+function highlightLinksFor(nodeId) {
+  // Undo any source/target flip from the previous highlight before computing
+  // a new one, so links not touching the new selection stay in their
+  // original, data-correct orientation.
+  swappedLinks.forEach(l => {
+    const tmp = l.source;
+    l.source = l.target;
+    l.target = tmp;
+  });
+  swappedLinks = [];
+  highlightedLinkIds = new Set();
+  labeledNodeIds = new Set();
+  selectedNodeId = nodeId;
+
+  if (nodeId != null) {
+    labeledNodeIds.add(nodeId);
+    Graph.graphData().links.forEach(l => {
+      const s = nodeIdOf(l.source);
+      const t = nodeIdOf(l.target);
+      if (s !== nodeId && t !== nodeId) return;
+      highlightedLinkIds.add(linkKey(l));
+      labeledNodeIds.add(s === nodeId ? t : s);
+      if (t === nodeId) {
+        // Particles always travel source -> target. Flipping the link so the
+        // clicked node is always the source (rather than reversing speed,
+        // which this build of 3d-force-graph doesn't wrap cleanly over long
+        // durations) keeps particles reliably flowing outward. Swap the
+        // actual node object references (not just their ids).
+        const origSource = l.source;
+        const origTarget = l.target;
+        l.source = origTarget;
+        l.target = origSource;
+        swappedLinks.push(l);
+      }
+    });
+  }
+  Graph.linkDirectionalParticles(linkParticles);
+  // Re-invoke the color accessors so every existing node/link picks up the
+  // dim-or-not state that just changed, not just newly-created ones.
+  Graph.nodeColor(nodeColor);
+  Graph.linkColor(linkColor);
+  syncNodeLabels();
+}
+
+// drift_of edges (a drift variant's line back to the concept it diverges
+// from) get a permanent row of small static particles so they read as a
+// dotted line, like 2D's dotted drift_of style -- reusing the existing
+// particle system rather than a genuinely dashed THREE.Line was a deliberate
+// fallback: 3d-force-graph always builds links as solid CylinderGeometry
+// meshes (see linkWidth below), and THREE.LineDashedMaterial only dashes
+// THREE.Line geometry, not mesh triangles, so real dashing would need a
+// custom linkThreeObject built with a second, separately-loaded three.js
+// instance. That was tried and reverted: 3d-force-graph bundles its own
+// internal three.js and only reuses a global THREE for a few extension-point
+// classes (AmbientLight among them) -- not the renderer/scene -- so a second
+// instance desyncs lighting from the rest of the graph, washing out every
+// node's color, not just drift_of's line. See the label-rendering comment
+// below for the same "second three.js instance" problem, hit here again.
+// Particles with speed 0 sit at fixed, evenly-spaced points along the link
+// (each particle's position is its fixed initial offset plus phase*speed),
+// so 0 speed reads as static dots rather than "traveling data" -- distinct
+// from the fast green particles a highlighted link gets on click.
+function linkParticles(l) {
+  if (isHighlighted(l)) return 4;
+  return l.type === 'drift_of' ? 5 : 0;
+}
+
+function linkParticleColor(l) {
+  return isHighlighted(l) ? '#39ff88' : linkColor(l);
+}
+
+function linkParticleWidth(l) {
+  if (isHighlighted(l)) return 3;
+  return l.type === 'drift_of' ? 1.5 : 3; // smaller so the static dots read as a dotted line, not particles
+}
+
+function linkParticleSpeed(l) {
+  return isHighlighted(l) ? 0.012 : 0;
+}
+
+function linkWidth(l) {
+  const base = (l.type === 'translates_to' || l.type === 'relates_to') ? 1.5 : 0.5;
+  if (!isHighlighted(l)) return base;
+  return base * 2 * (1 + 0.6 * Math.sin(pulsePhase));
+}
+
+let driftVisible = true;
+function visibleData() {
+  if (driftVisible) return DATA;
+  const hiddenIds = new Set(DATA.nodes.filter(n => n.type === 'variant').map(n => n.id));
+  return {
+    nodes: DATA.nodes.filter(n => n.type !== 'variant'),
+    links: DATA.links.filter(l => !hiddenIds.has(l.source) && !hiddenIds.has(l.target) && !hiddenIds.has(l.source.id) && !hiddenIds.has(l.target.id))
+  };
+}
+
+const SIDEBAR_WIDTH = 340;
+function graphDimensions() {
+  return { width: Math.max(200, window.innerWidth - SIDEBAR_WIDTH), height: window.innerHeight };
+}
+
+// Node name labels are plain DOM elements layered over the WebGL canvas and
+// repositioned every frame from the 3D camera's own matrices (see
+// updateNodeLabelPositions). A three.js nodeThreeObject sprite was tried
+// first, but 3d-force-graph bundles its own internal three.js build; a
+// second, separately-loaded three.js for label text creates two live
+// instances in the page ("Multiple instances of Three.js being imported"),
+// and objects built from the second instance silently fail to render
+// through the first instance's WebGLRenderer. DOM elements sidestep that
+// entirely and don't need three.js at all.
+//
+// Appended to #app, not #graph: ForceGraph3D()(container) takes ownership
+// of its container and clears/rebuilds its contents during construction
+// (see the Graph assignment below), so anything appended to #graph earlier
+// in this function wouldn't survive that. In the combined viewer
+// (build_viewer.py), this means #node-labels sits outside the tab-hidden
+// view panes' visibility toggling -- that viewer's tab controller looks
+// this element up by id and hides it explicitly whenever the 3D tab isn't
+// active, rather than relying on CSS inheritance from a parent pane.
+const labelsLayer = document.createElement('div');
+labelsLayer.id = 'node-labels';
+labelsLayer.style.cssText = `position:fixed; top:0; left:0; right:${SIDEBAR_WIDTH}px; bottom:0; pointer-events:none; overflow:hidden; z-index:5;`;
+document.getElementById('app').appendChild(labelsLayer);
+const nodeLabelEls = new Map(); // node id -> label div, only for currently labeledNodeIds
+
+// Keeps the DOM label elements in sync with labeledNodeIds/selectedNodeId
+// (recomputed by highlightLinksFor on every click) plus whatever's currently
+// hovered (hoveredNodeId, set by onNodeHover below) -- hovering a node labels
+// it the same way regardless of whether it's part of the click selection.
+// Positions are handled separately, per frame, by updateNodeLabelPositions.
+function syncNodeLabels() {
+  const activeIds = new Set(labeledNodeIds);
+  if (hoveredNodeId != null) activeIds.add(hoveredNodeId);
+
+  nodeLabelEls.forEach((el, id) => {
+    if (!activeIds.has(id)) {
+      el.remove();
+      nodeLabelEls.delete(id);
+    }
+  });
+  activeIds.forEach(id => {
+    if (nodeLabelEls.has(id)) return;
+    const node = DATA.nodes.find(n => n.id === id);
+    if (!node) return;
+    const el = document.createElement('div');
+    el.className = 'node-float-label';
+    el.textContent = nodeDisplayLabel(node);
+    el.style.display = 'none'; // positioned on the next animation frame
+    labelsLayer.appendChild(el);
+    nodeLabelEls.set(id, el);
+  });
+  nodeLabelEls.forEach((el, id) => el.classList.toggle('selected', id === selectedNodeId || id === hoveredNodeId));
+}
+
+function worldToScreen(x, y, z, camera, rect) {
+  function multiply(m, v) {
+    const out = [0, 0, 0, 0];
+    for (let row = 0; row < 4; row++) {
+      let sum = 0;
+      for (let col = 0; col < 4; col++) sum += m[col * 4 + row] * v[col];
+      out[row] = sum;
+    }
+    return out;
+  }
+  const view = multiply(camera.matrixWorldInverse.elements, [x, y, z, 1]);
+  const depth = -view[2]; // three.js cameras look down their own -Z axis
+  if (depth <= 0) return null; // behind the camera
+  const clip = multiply(camera.projectionMatrix.elements, view);
+  if (clip[3] <= 0) return null;
+  return {
+    x: (clip[0] / clip[3] * 0.5 + 0.5) * rect.width + rect.left,
+    y: (-(clip[1] / clip[3]) * 0.5 + 0.5) * rect.height + rect.top,
+    depth
+  };
+}
+
+// Converts a world-space length (a node's rendered sphere radius) to on-
+// screen pixels at a given camera depth. A *fixed* pixel gap computed this
+// way keeps the label a constant, symmetric distance above the sphere's
+// screen silhouette at any zoom level -- offsetting in world space instead
+// (adding to node.y before projecting) was tried first, but a fixed world-
+// space offset projects to a shrinking/growing pixel gap as the camera
+// dollies in and out, since perspective foreshortens far things more than
+// near things.
+function worldLengthToScreenPixels(length, depth, camera, rect) {
+  const fovRad = camera.fov * Math.PI / 180;
+  return length * rect.height / (2 * depth * Math.tan(fovRad / 2));
+}
+
+// A world-space text height (analogous to nodeRadius), converted to on-
+// screen pixels the same way the sphere radius is -- so label text grows and
+// shrinks with zoom just like the spheres do, instead of staying a fixed CSS
+// size. Clamped so text never becomes illegibly small when zoomed far out or
+// absurdly large at extreme close range.
+const LABEL_WORLD_HEIGHT = 15;
+const LABEL_MIN_FONT_PX = 10;
+const LABEL_MAX_FONT_PX = 48;
+
+// Runs every animation frame (see animate() below) so labels track their
+// node through the force simulation's residual jitter, manual orbit/pan/
+// zoom, and the idle auto-rotate alike -- not just at the moment of click.
+function updateNodeLabelPositions() {
+  if (!nodeLabelEls.size) return;
+  const camera = Graph.camera();
+  const rect = Graph.renderer().domElement.getBoundingClientRect();
+  const liveNodes = Graph.graphData().nodes;
+  nodeLabelEls.forEach((el, id) => {
+    const n = liveNodes.find(nn => nn.id === id);
+    if (!n || n.x == null) { el.style.display = 'none'; return; }
+    const p = worldToScreen(n.x, n.y, n.z, camera, rect);
+    if (!p) { el.style.display = 'none'; return; }
+    const screenRadius = worldLengthToScreenPixels(nodeRadius(n), p.depth, camera, rect);
+    const fontPx = Math.max(LABEL_MIN_FONT_PX, Math.min(LABEL_MAX_FONT_PX,
+      worldLengthToScreenPixels(LABEL_WORLD_HEIGHT, p.depth, camera, rect)));
+    const gapPx = Math.max(4, fontPx * 0.3);
+    el.style.display = '';
+    el.style.fontSize = fontPx + 'px';
+    el.style.left = p.x + 'px';
+    el.style.top = (p.y - screenRadius - gapPx) + 'px';
+  });
+}
+
+const Graph = ForceGraph3D()(document.getElementById('graph'))
+  .width(graphDimensions().width)
+  .height(graphDimensions().height)
+  .backgroundColor('#05070a')
+  .graphData(structuredCloneSafe(DATA))
+  .nodeId('id')
+  .nodeRelSize(NODE_REL_SIZE)
+  .nodeResolution(24)
+  .cooldownTicks(150)
+  .nodeColor(nodeColor)
+  .nodeVal(nodeSize)
+  .linkColor(linkColor)
+  .linkWidth(linkWidth)
+  // The relation verb ("transformed into") on hover over a domain-relationship
+  // edge; 3d-force-graph's built-in linkLabel floats it at the cursor. Only
+  // relates_to edges carry a relation, so other edge types get no tooltip.
+  .linkLabel(l => l.type === 'relates_to' && l.relation ? escapeHtml(relationName(l.relation)) : '')
+  .linkDirectionalArrowLength(l => (l.type === 'translates_to' || l.type === 'relates_to') ? 4 : 0)
+  .linkDirectionalArrowRelPos(1)
+  .linkDirectionalParticles(linkParticles)
+  .linkDirectionalParticleWidth(linkParticleWidth)
+  .linkDirectionalParticleColor(linkParticleColor)
+  .linkDirectionalParticleSpeed(linkParticleSpeed)
+  .linkOpacity(0.4)
+  // Hovering labels the node above its sphere via the same DOM label system
+  // as click selection (see syncNodeLabels), rather than 3d-force-graph's
+  // built-in nodeLabel tooltip, which floats at the mouse cursor instead of
+  // staying anchored to the sphere itself.
+  .onNodeHover(node => {
+    document.getElementById('graph').style.cursor = node ? 'pointer' : 'default';
+    hoveredNodeId = node ? node.id : null;
+    syncNodeLabels();
+  })
+  // Orbiting the camera around the graph's center so the clicked node ends
+  // up facing it (without changing zoom distance) is handled by selectNode,
+  // defined below and shared with clicks on node-referencing sidebar
+  // entries. Pivoting on the world origin (rather than the
+  // cameraPosition() getter's "lookAt", which does not reliably reflect
+  // what's actually being looked at) works because d3-force's centering
+  // force keeps the graph's centroid there.
+  .onNodeClick(node => selectNode(node))
+  // 3d-force-graph's own drag handler unfixes a dragged node the instant
+  // you release it (unless it was already pinned before the drag started)
+  // and reheats the simulation, so link/charge forces immediately pull it
+  // back toward equilibrium -- the node visibly snaps back. Re-fixing fx/fy/fz
+  // to the dropped position here runs right after that unfix, turning the
+  // drag into a permanent pin instead of a temporary nudge.
+  .onNodeDragEnd(node => { node.fx = node.x; node.fy = node.y; node.fz = node.z; })
+  .onBackgroundClick(() => {
+    showSidebar('<div class="empty">Click a concept or context to see details.<br><br>Drag to orbit, scroll to zoom, right-drag to pan.</div>');
+    highlightLinksFor(null);
+  });
+
+// Lets sidebarHistory (viewer_shell.py) replay a Back/Forward step that was
+// pushed while this was the active engine -- in the combined tabbed viewer,
+// stepping onto an id 2D pushed returns false here so goTo() leaves it to
+// the 2D engine's own registered selector instead.
+sidebarHistory.registerEngine('3d', (id) => {
+  const node = Graph.graphData().nodes.find(n => n.id === id);
+  if (!node) return false;
+  selectNode(node, { skipHistory: true });
+  return true;
+});
+
+// Plain-language reference for the Legend button (sidebarHistory in
+// viewer_shell.py), written for someone with no domain-modeling background
+// -- computed fresh from DATA each time so it only ever explains things
+// actually present in this graph (e.g. no drift-variant entry if this
+// domain's JSON has no drift_report at all).
+const KIND_EXPLAIN = {
+  person: 'An individual person or role mentioned in the domain.',
+  group: 'A team or organizational group.',
+  system: 'A technical system or service.',
+  work_object: 'A "thing" being created, moved, or acted on -- a document, request, record, and so on.',
+  event: 'Something that happens at a point in time -- a trigger or occurrence.'
+};
+const LINK_EXPLAIN = {
+  relates_to: { color: '#c792ea', arrow: true, text: 'These two concepts are directly related in the domain (e.g. one causes or depends on the other). Hover a line to see exactly how.' },
+  translates_to: { color: '#5aa9ff', arrow: true, text: 'A boundary translation -- the same idea is called something different once it crosses into another context.' },
+  belongs_to: { color: '#333', arrow: false, text: 'Ownership -- this concept belongs to (is defined by) this context.' },
+  used_in: { color: '#556', arrow: false, text: 'This concept is also used inside a context that doesn\'t own it.' },
+  drift_of: { color: '#444', style: 'dotted', arrow: false, text: 'Links a drift variant back to the concept it diverges from.' }
+};
+const SEV_COLOR = { high: '#e85d5d', medium: '#e8b34d' };
+const SEV_LABEL = { high: 'high', medium: 'medium', low: 'low' };
+
+function legendRow(swatchHtml, bodyHtml) {
+  return `<div class="legend-row">${swatchHtml || ''}<div>${bodyHtml}</div></div>`;
+}
+function legendDot(color) {
+  return `<span class="legend-swatch legend-dot" style="background:${color};"></span>`;
+}
+function legendLine(color, style) {
+  return `<span class="legend-swatch legend-line" style="border-top-color:${color};border-top-style:${style || 'solid'};"></span>`;
+}
+// Small details a swatch alone can be easy to miss (a dashed vs. dotted vs.
+// solid line, an arrowhead) -- spelled out in words so they don't rely on
+// spotting a subtle visual difference, same reasoning as the arrow caption
+// this already had before line style got one too.
+function legendCaptions(info) {
+  const parts = [];
+  if (info.style === 'dashed' || info.style === 'dotted') parts.push(info.style + ' line');
+  if (info.arrow) parts.push('arrow shows direction');
+  return parts.length ? ` <span class="muted">(${parts.join('; ')})</span>` : '';
+}
+
+function buildLegendHtml() {
+  const contexts = DATA.nodes.filter(n => n.type === 'context');
+  const concepts = DATA.nodes.filter(n => n.type === 'concept');
+  const variants = DATA.nodes.filter(n => n.type === 'variant');
+  const presentKinds = Array.from(new Set(concepts.map(n => n.kind).filter(Boolean)));
+  const hasSharedKernel = concepts.some(n => n.shared_kernel);
+  const presentLinkTypes = Array.from(new Set(DATA.links.map(l => l.type))).filter(t => LINK_EXPLAIN[t]);
+  const presentSeverities = Array.from(new Set(variants.map(n => n.severity).filter(Boolean)));
+
+  let out = '<h2>Legend</h2><div class="def muted">What the colors, sizes, and lines in this diagram mean.</div>';
+
+  out += '<h3>Contexts</h3>';
+  out += `<div class="def">Each <strong>context</strong> -- a team or part of the business with its own consistent vocabulary -- gets its own color:</div>`;
+  contexts.forEach(c => { out += legendRow(legendDot(contextColor[c.id] || '#5aa9ff'), escapeHtml(c.label)); });
+
+  out += '<h3>Concepts</h3>';
+  out += legendRow('', 'A <strong>concept</strong> -- a term from the shared vocabulary -- is colored the same as whichever context owns it. Match its color to the list above to see which context defines it.');
+  if (hasSharedKernel) {
+    out += legendRow('', 'A noticeably <strong>bigger sphere</strong> means that concept is used consistently across several contexts (3 or more) instead of belonging to just one -- sometimes called a "shared kernel".');
+  }
+  if (variants.length) {
+    const sevTags = presentSeverities.map(s => `<span class="tag" style="background:${SEV_COLOR[s] || '#4a4f5b'};color:#0f1115;">${escapeHtml(SEV_LABEL[s] || s)}</span>`).join(' ');
+    out += legendRow('', `A <strong>drift variant</strong> is a different word people actually used for a concept that clashes with its canonical name -- colored by how severe the mismatch is: ${sevTags}`);
+  }
+
+  if (presentKinds.length) {
+    out += '<h3>What kind of thing a concept represents</h3>';
+    presentKinds.forEach(k => {
+      out += legendRow('', `<span class="legend-swatch">${kindGlyph(k)}</span> <strong>${escapeHtml(kindLabel(k))}</strong> -- ${escapeHtml(KIND_EXPLAIN[k] || '')}`);
+    });
+  }
+
+  if (presentLinkTypes.length) {
+    out += '<h3>Connections</h3>';
+    presentLinkTypes.forEach(t => {
+      const info = LINK_EXPLAIN[t];
+      out += legendRow(legendLine(info.color, info.style), escapeHtml(info.text) + legendCaptions(info));
+    });
+  }
+
+  out += '<h3>Clicking a node</h3>';
+  out += '<div class="def">Everything not directly connected fades into the background, and small particles flow along the connected lines -- like traffic flowing outward -- so you can see at a glance what\'s linked to what you selected.</div>';
+
+  return out;
+}
+sidebarHistory.registerLegend('3d', buildLegendHtml);
+
+// 3d-force-graph's untouched defaults (d3-force-3d's forceLink distance 30,
+// forceManyBody strength -30) pack a glossary-sized graph into a tight,
+// overlapping clump. d3Force('link'/'charge') return the underlying d3-force
+// instances directly (unlike the rest of the Graph(...) chain above, these
+// don't return Graph, so they're set separately) -- pushing link distance
+// and charge repulsion well past the defaults spreads nodes out enough for
+// individual spheres and labels to stay readable instead of overlapping.
+//
+// The 130/-260 base values were hand-tuned for the ~35-node glossary this
+// viewer originally shipped with. Left fixed, a growing glossary re-crowds
+// as concepts are added, so both scale with node count: cube root because
+// this is a 3D layout (volume grows with distance^3, so distance needs to
+// grow with the cube root of node count to keep density-per-node roughly
+// constant). Clamped to never shrink below the original hand-tuned baseline
+// for smaller graphs.
+const spacingScale = Math.max(1, Math.cbrt(DATA.nodes.length / 35));
+Graph.d3Force('link').distance(130 * spacingScale);
+Graph.d3Force('charge').strength(-260 * spacingScale);
+
+// A dead-on initial camera angle makes boxes/octahedrons/tetrahedrons all
+// project as flat quadrilaterals. A slow constant auto-rotate keeps enough
+// parallax on screen at all times for the different node shapes to read
+// as 3D without requiring the user to drag first.
+//
+// 3d-force-graph's default controls are THREE.TrackballControls, not
+// OrbitControls -- TrackballControls has no autoRotate support at all, so
+// the rotation has to be driven manually by moving the camera in a circle
+// around the world origin every frame (the graph's centroid, thanks to
+// d3-force's centering force).
+let autoSpin = true;
+Graph.controls().addEventListener('start', () => { autoSpin = false; });
+
+(function animate() {
+  if (autoSpin) {
+    const pos = Graph.cameraPosition();
+    const angle = 0.0025;
+    const cosA = Math.cos(angle), sinA = Math.sin(angle);
+    Graph.cameraPosition({
+      x: pos.x * cosA - pos.z * sinA,
+      y: pos.y,
+      z: pos.x * sinA + pos.z * cosA
+    }, { x: 0, y: 0, z: 0 }, 0);
+  }
+  if (highlightedLinkIds.size) {
+    pulsePhase += 0.15;
+    Graph.linkWidth(linkWidth);
+  }
+  updateNodeLabelPositions();
+  requestAnimationFrame(animate);
+})();
+
+function structuredCloneSafe(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function findLinks(nodeId, type) {
+  return DATA.links.filter(l => {
+    const s = l.source.id || l.source;
+    const t = l.target.id || l.target;
+    return (s === nodeId || t === nodeId) && l.type === type;
+  });
+}
+
+// Sidebar entries that name another node (a context, concept, or drift
+// variant) are rendered with these so they're clickable -- clicking one
+// selects that node in the 3D view exactly like clicking its sphere would.
+function nodeRefTag(id, label) {
+  return `<span class="tag node-link" data-node-id="${escapeHtml(id)}">${escapeHtml(label)}</span>`;
+}
+function nodeRefLi(id, innerHtml) {
+  return `<li class="node-link" data-node-id="${escapeHtml(id)}">${innerHtml}</li>`;
+}
+
+function renderSidebar(node) {
+  if (node.type === 'context') {
+    const members = DATA.nodes.filter(n => n.type === 'concept' && n.owning_context === node.id);
+    let out = `<h2>${escapeHtml(node.label)}</h2><div class="tag">context ${escapeHtml(node.id)}</div>`;
+    out += `<div class="def">${escapeHtml(node.description)}</div>`;
+    out += `<h3>Concepts owned here (${members.length})</h3><ul class="plain">`;
+    members.forEach(m => out += nodeRefLi(m.id, escapeHtml(m.label)));
+    out += `</ul>`;
+    showSidebar(out);
+  } else if (node.type === 'concept') {
+    let out = `<h2>${escapeHtml(nodeDisplayLabel(node))}</h2>`;
+    if (node.kind) out += `<div class="tag">${escapeHtml(kindLabel(node.kind))}</div>`;
+    if (node.shared_kernel) out += `<div class="tag" style="background:#4a3b00;color:#ffd166;">Shared kernel &middot; ${node.coupling} contexts</div>`;
+    out += `<div class="def">${escapeHtml(node.definition)}</div>`;
+    out += `<h3>Owning context</h3>${nodeRefTag(node.owning_context, contextName(node.owning_context))}`;
+    const rels = findLinks(node.id, 'relates_to');
+    if (rels.length) {
+      out += `<h3>Relationships</h3><ul class="plain">`;
+      rels.forEach(l => {
+        const s = l.source.id || l.source;
+        const t = l.target.id || l.target;
+        const outgoing = s === node.id;
+        const otherId = outgoing ? t : s;
+        const other = DATA.nodes.find(n => n.id === otherId);
+        const otherLabel = other ? nodeDisplayLabel(other) : otherId;
+        const verb = escapeHtml(relationName(l.relation));
+        out += outgoing
+          ? `<li><span class="muted">${verb} &rarr;</span> ${nodeRefTag(otherId, otherLabel)}`
+          : `<li>${nodeRefTag(otherId, otherLabel)} <span class="muted">&rarr; ${verb} this</span>`;
+        if (l.note) out += `<br><span class="muted">${escapeHtml(l.note)}</span>`;
+        out += `</li>`;
+      });
+      out += `</ul>`;
+    }
+    if (node.appears_in_contexts && node.appears_in_contexts.length > 1) {
+      out += `<h3>Also appears in</h3>`;
+      node.appears_in_contexts.forEach(c => { if (c !== node.owning_context) out += nodeRefTag(c, contextName(c)); });
+    }
+    if (node.aliases && node.aliases.length) {
+      out += `<h3>Aliases observed</h3>`;
+      node.aliases.forEach(a => out += `<span class="tag">${escapeHtml(a)}</span>`);
+    }
+    if (node.context_overrides && node.context_overrides.length) {
+      out += `<h3>Context overrides</h3><ul class="plain">`;
+      node.context_overrides.forEach(o => {
+        const kindLabel = o.kind === 'accidental_drift' ? 'accidental drift' : 'legitimate translation';
+        out += `<li>${nodeRefTag(o.context, contextName(o.context))} uses <strong>${escapeHtml(o.local_term)}</strong> <span class="muted">(${kindLabel})</span>`;
+        if (o.reason) out += `<br><span class="muted">${escapeHtml(o.reason)}</span>`;
+        out += `</li>`;
+      });
+      out += `</ul>`;
+    }
+    if (node.homonyms && node.homonyms.length) {
+      node.homonyms.forEach(h => {
+        const otherMeanings = h.meanings.filter(m => m.concept_id !== node.id);
+        if (!otherMeanings.length) return;
+        out += `<h3>Homonym: "${escapeHtml(h.term)}"</h3><div class="muted">Also means, elsewhere:</div><ul class="plain">`;
+        otherMeanings.forEach(m => {
+          out += nodeRefLi(m.concept_id, `${nodeRefTag(m.context, contextName(m.context))} ${escapeHtml(m.definition)}`);
+        });
+        out += `</ul>`;
+      });
+    }
+    if (node.appears_in_stories && node.appears_in_stories.length) {
+      out += `<h3>Source stories</h3><ul class="plain">`;
+      node.appears_in_stories.forEach(s => out += `<li>${escapeHtml(storyTitle(s))}</li>`);
+      out += `</ul>`;
+    }
+    const drifts = findLinks(node.id, 'drift_of');
+    if (drifts.length) {
+      out += `<h3>Drift variants</h3><ul class="plain">`;
+      drifts.forEach(l => {
+        const variantId = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
+        const vnode = DATA.nodes.find(n => n.id === variantId);
+        if (vnode) out += nodeRefLi(vnode.id, `<span class="sev-${vnode.severity}">&#9679;</span> ${escapeHtml(vnode.label)} <span class="muted">(${vnode.severity})</span>`);
+      });
+      out += `</ul>`;
+    }
+    const crossings = findLinks(node.id, 'translates_to');
+    if (crossings.length) {
+      out += `<h3>Boundary translations</h3><ul class="plain">`;
+      crossings.forEach(l => {
+        out += `<li>${nodeRefTag(l.from_context, contextName(l.from_context))} &rarr; ${nodeRefTag(l.to_context, contextName(l.to_context))}<br>${escapeHtml(l.from_term)} &rarr; ${escapeHtml(l.to_term)}`;
+        if (l.note) out += `<br><span class="muted">${escapeHtml(l.note)}</span>`;
+        out += `</li>`;
+      });
+      out += `</ul>`;
+    }
+    showSidebar(out);
+  } else if (node.type === 'variant') {
+    let out = `<h2>${escapeHtml(node.label)}</h2><div class="tag sev-${node.severity}">${escapeHtml(node.severity)} severity</div>`;
+    out += `<div class="def">${escapeHtml(node.suggested_fix)}</div>`;
+    out += `<h3>Why</h3><div class="def muted">${escapeHtml(node.severity_rationale)}</div>`;
+    showSidebar(out);
+  }
+}
+
+// Selects a node exactly the way clicking its sphere in the 3D view does --
+// shared by onNodeClick and by clicks on node-referencing sidebar entries
+// (see nodeRefTag/nodeRefLi above) so the two entry points stay in sync.
+// opts.skipHistory is set by sidebarHistory's registered '3d' selector
+// (Back/Forward buttons replaying a past selection) so it doesn't push a
+// fresh entry back onto the stack it's currently stepping through.
+function selectNode(node, opts) {
+  autoSpin = false;
+  renderSidebar(node);
+  highlightLinksFor(node.id);
+  if (!opts || !opts.skipHistory) sidebarHistory.push('3d', node.id);
+  const pos = Graph.cameraPosition();
+  const camDist = Math.hypot(pos.x, pos.y, pos.z);
+  const dirLen = Math.hypot(node.x, node.y, node.z) || 1;
+  Graph.cameraPosition(
+    {
+      x: (node.x / dirLen) * camDist,
+      y: (node.y / dirLen) * camDist,
+      z: (node.z / dirLen) * camDist
+    },
+    { x: 0, y: 0, z: 0 },
+    800
+  );
+}
+
+document.getElementById('sidebar').addEventListener('click', (e) => {
+  // In the combined tabbed viewer (build_viewer.py), 2D's identical listener
+  // is also attached to this same #sidebar -- both engines share every node
+  // id, so without this guard a single click would fire both, pushing two
+  // history entries for what the user experienced as one navigation step.
+  // #graph only ever carries 'view-hidden' inside that combined viewer; in
+  // the standalone 3D viewer this class never exists, so the guard is a
+  // no-op there.
+  if (document.getElementById('graph').classList.contains('view-hidden')) return;
+  const el = e.target.closest('[data-node-id]');
+  if (!el) return;
+  const node = Graph.graphData().nodes.find(n => n.id === el.dataset.nodeId);
+  if (node) selectNode(node);
+});
+
+document.getElementById('toggle-drift').addEventListener('click', (e) => {
+  driftVisible = !driftVisible;
+  e.target.classList.toggle('active', driftVisible);
+  Graph.graphData(structuredCloneSafe(visibleData()));
+});
+
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  if (!q) { Graph.nodeColor(nodeColor); return; }
+  Graph.nodeColor(n => n.label.toLowerCase().includes(q) ? '#ffffff' : nodeColor(n));
+});
+
+window.addEventListener('resize', () => {
+  const d = graphDimensions();
+  Graph.width(d.width).height(d.height);
+});
+
+} // end initGraph3D
+
+if (typeof ForceGraph3D !== 'undefined') {
+  initGraph3D();
+} else {
+  window.addEventListener('force-graph-ready', initGraph3D, { once: true });
+}
+
+</script>
+</body>
+</html>
