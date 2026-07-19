@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ubiquitous Language — multiple-banking-stories-transcript</title>
+  <!-- Same-origin file: when this page is opened through the running app (the
+       Doc tab of the glossary graph viewer, or /sessions/<id>/files/...), it
+       shares localStorage with the app shell, so this picks up the same
+       'klarik-theme' choice stories_index etc. follow (domain-story-agent's
+       web/theme-init.js). Opened straight from disk instead (file://), this
+       script 404s silently and the page just falls back to the light values
+       below -- not a regression, since that path had no theme before either. -->
+  <script src="/static/theme-init.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    /* Palette matches domain-story-agent's web/theme.css and doc_page.css's
+       card layout, so this standalone file reads as the same document type as
+       the app's own rendered pages, light AND dark. Inlined rather than linked
+       to a stylesheet because this file may be opened with no server at all. */
+    :root {
+      --bg:         #f8f5ef;
+      --surface:    #ffffff;
+      --border:     rgba(0, 0, 0, 0.08);
+      --text:       #1a1a1a;
+      --muted:      #5a6070;
+      --accent:     #1a8a72;
+      --navy:       #0e1b2e;
+      --line:       #e5e7eb;
+      --wash:       #f9fafb;
+      --radius:     8px;
+    }
+    :root[data-theme="dark"] {
+      --bg:      #111318;
+      --surface: #1b2028;
+      --border:  rgba(255, 255, 255, 0.10);
+      --text:    #f2f5f7;
+      --muted:   #aab4bf;
+      --accent:  #28b39a;
+      --navy:    #0d1c31;
+      --line:    rgba(255, 255, 255, 0.10);
+      --wash:    #232a34;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, "Segoe UI",
+                   Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 15px;
+      line-height: 1.65;
+      color: var(--text);
+      background: var(--bg);
+    }
+    .page {
+      max-width: clamp(700px, 90%, 1100px);
+      margin: 32px auto 64px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 20px rgba(0,0,0,0.07), 0 12px 32px rgba(0,0,0,0.28);
+      overflow: hidden;
+    }
+    .doc-header { background: var(--navy); padding: 22px 32px 18px; }
+    .doc-header h1 {
+      color: #fff;
+      font-size: 1.625rem;
+      font-weight: 700;
+      line-height: 1.25;
+      font-family: 'Playfair Display', serif;
+      margin: 0;
+    }
+    .doc-body { padding: 36px 36px 48px; }
+    h1, h2, h3, h4 { font-weight: 600; line-height: 1.25; margin: 2rem 0 0.5rem; color: var(--text); }
+    h2 { font-size: 1.0625rem; padding-left: 12px; border-left: 3px solid var(--accent); }
+    h2:not(:first-of-type) { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+    h3 { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+    p { margin: 0.6rem 0; }
+    ul, ol { padding-left: 1.6rem; margin: 0.5rem 0; }
+    li { margin: 0.2rem 0; }
+    a { color: var(--text); text-decoration: underline; }
+    a:hover { color: var(--muted); }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1rem 0;
+      font-size: 0.875rem;
+      display: block;
+      overflow-x: auto;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 7px 13px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--wash); font-weight: 600; font-size: 0.8rem; white-space: nowrap; }
+    tr:hover td { background: var(--wash); }
+    code {
+      font-family: "SF Mono", "Cascadia Code", Consolas, "Liberation Mono", Menlo, monospace;
+      font-size: 0.825em;
+      background: var(--wash);
+      border: 1px solid var(--line);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+    pre {
+      background: var(--wash);
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 16px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+    }
+    pre code { background: none; border: none; padding: 0; }
+    .mermaid {
+      text-align: center;
+      margin: 1.5rem 0;
+      background: none;
+      cursor: zoom-in;
+    }
+    .mermaid svg { max-width: 100%; height: auto; }
+    .mermaid::after {
+      content: "\2315  click to enlarge";
+      display: block;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+    }
+    .diagram-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 1000;
+      display: flex;
+    }
+    .diagram-modal[hidden] { display: none; }
+    .diagram-stage {
+      flex: 1;
+      overflow: hidden;
+      cursor: grab;
+      touch-action: none;
+    }
+    .diagram-stage.grabbing { cursor: grabbing; }
+    .diagram-stage svg {
+      transform-origin: 0 0;
+      max-width: none !important;
+      max-height: none !important;
+      user-select: none;
+      background: var(--surface);
+      border-radius: 4px;
+    }
+    .diagram-toolbar {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      display: flex;
+      gap: 0.4rem;
+      z-index: 1001;
+    }
+    .diagram-toolbar button {
+      width: 2.5rem;
+      height: 2.5rem;
+      font-size: 1.3rem;
+      line-height: 1;
+      border: none;
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+    }
+    .diagram-toolbar button:hover { background: var(--wash); }
+    .story-ref { border-bottom: 1px dotted var(--muted); cursor: help; }
+    blockquote {
+      border-left: 3px solid var(--line);
+      margin: 0.75rem 0;
+      padding: 0.25rem 0 0.25rem 1rem;
+      color: var(--muted);
+    }
+    hr { border: none; border-top: 1px solid var(--line); margin: 2rem 0; }
+    .meta {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 3rem;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--line);
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+  <div class="doc-header"><h1>Consumer Account Onboarding — Ubiquitous Language</h1></div>
+  <div class="doc-body">
+<h2>Source stories</h2>
+<blockquote>
+<p><em>What this is:</em> the domain stories this glossary was derived from. The drift and glossary tables below reference these by name.</p>
+</blockquote>
+<ol>
+<li><a href="../story-branch-account-application-submission.md">Branch Account Application Submission</a></li>
+<li><a href="../story-compliance-kyc-review.md">Compliance Kyc Review</a></li>
+<li><a href="../story-core-banking-account-opening.md">Core Banking Account Opening</a></li>
+<li><a href="../story-digital-account-application-submission.md">Digital Account Application Submission</a></li>
+<li><a href="../story-escalation-of-stalled-kyc-cases.md">Escalation Of Stalled Kyc Cases</a></li>
+<li><a href="../story-fraud-risk-scoring.md">Fraud Risk Scoring</a></li>
+<li><a href="../story-post-account-fraud-reversal.md">Post Account Fraud Reversal</a></li>
+</ol>
+<h2>Bounded contexts</h2>
+<blockquote>
+<p><em>What this is:</em> a quick legend for the context labels (C1, C1a, …) used in the tables below. A <strong>bounded context</strong> is a boundary inside which the domain language stays consistent.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Context</th>
+<th>Name</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>C1</td>
+<td>Branch Channel</td>
+<td>Front-office branch operations where Personal Bankers interact with Applicants, collect documents, and submit applications.</td>
+</tr>
+<tr>
+<td>C2</td>
+<td>Digital Channel</td>
+<td>Digital/mobile app channel where Applicants self-serve to fill in details and submit cases for account opening.</td>
+</tr>
+<tr>
+<td>C3</td>
+<td>Compliance</td>
+<td>Mid-office compliance operations including KYC review, watchlist screening, and identity verification.</td>
+</tr>
+<tr>
+<td>C4</td>
+<td>Fraud</td>
+<td>Fraud risk assessment operations including risk scoring, threshold comparison, and manual override queue.</td>
+</tr>
+<tr>
+<td>C5</td>
+<td>Core Banking</td>
+<td>Core banking system responsible for creating deposit accounts, ledger records, and publishing account-opened events.</td>
+</tr>
+<tr>
+<td>C6</td>
+<td>Notification</td>
+<td>Notification service responsible for sending communications (emails) to applicants.</td>
+</tr>
+</tbody>
+</table>
+<h2>1. Global glossary</h2>
+<blockquote>
+<p><em>What this is:</em> the <strong>global glossary</strong> — one canonical term per real-world concept, with every observed alias preserved verbatim. This is the shared language the whole domain should converge on.<br><em>The <strong>Kind</strong> column means:</em> <strong>person</strong> = a human role/actor; <strong>group</strong> = a team/department; <strong>system</strong> = a software system or automated component; <strong>work object</strong> = a document/artefact/data that flows; <strong>event</strong> = a signal/trigger. It separates the <em>people</em> from the <em>systems</em> from the <em>things they act on</em>.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Canonical term</th>
+<th>Kind</th>
+<th>Definition</th>
+<th>Owning context</th>
+<th>Aliases</th>
+<th>Appears in</th>
+<th>Stories</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>personal_banker</td>
+<td>Personal Banker</td>
+<td>Person</td>
+<td>A bank employee who collects applicant information, keys applications, and interacts with customers in the branch channel.</td>
+<td>Branch Channel</td>
+<td>Personal Banker</td>
+<td>Branch Channel, Compliance, Fraud, Core Banking</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>applicant</td>
+<td>Applicant</td>
+<td>Person</td>
+<td>A person applying to open a deposit account, providing personal details, ID, SSN, proof of address, and initial deposit.</td>
+<td>Branch Channel</td>
+<td>Applicant</td>
+<td>Branch Channel, Digital Channel, Compliance, Fraud, Core Banking, Notification</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>compliance_analyst</td>
+<td>Compliance Analyst</td>
+<td>Person</td>
+<td>A compliance team member who reviews screening results, documents KYC Cases, holds cases for fraud review, and approves cases.</td>
+<td>Compliance</td>
+<td>Compliance Analyst</td>
+<td>Compliance, Fraud</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>compliance_ops_lead</td>
+<td>Compliance Ops Lead</td>
+<td>Person</td>
+<td>A senior compliance team member who pulls stalled KYC Cases, compares risk scores against thresholds, and releases cases back for approval.</td>
+<td>Compliance</td>
+<td>Compliance Ops Lead</td>
+<td>Compliance, Fraud</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>fraud_analyst</td>
+<td>Fraud Analyst</td>
+<td>Person</td>
+<td>A fraud team member who monitors risk scores, compares them against thresholds, places cases into manual override queue, and can freeze/close deposit accounts.</td>
+<td>Fraud</td>
+<td>Fraud Analyst</td>
+<td>Fraud, Core Banking</td>
+<td>Branch Account Application Submission, Digital Account Application Submission, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>core_banking_ops_analyst</td>
+<td>Core Banking Ops Analyst</td>
+<td>Person</td>
+<td>A core banking operations team member who may create deposit accounts in the Core Banking System.</td>
+<td>Core Banking</td>
+<td>Core Banking Ops Analyst</td>
+<td>Core Banking</td>
+<td>Branch Account Application Submission, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases</td>
+</tr>
+<tr>
+<td>screening_engine</td>
+<td>Screening Engine</td>
+<td>System</td>
+<td>A system that runs applicant data against watchlists and produces screening results.</td>
+<td>Compliance</td>
+<td>Screening Engine</td>
+<td>Compliance</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>fraud_engine</td>
+<td>Fraud Engine</td>
+<td>System</td>
+<td>A system that produces risk scores for KYC Cases or Applications flagged for unusual funding.</td>
+<td>Fraud</td>
+<td>Fraud Engine</td>
+<td>Fraud</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>core_banking_system</td>
+<td>Core Banking System</td>
+<td>System</td>
+<td>The central banking system that creates deposit accounts, generates ledger records, and publishes account-opened events.</td>
+<td>Core Banking</td>
+<td>Core Banking System</td>
+<td>Core Banking</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>notification_service</td>
+<td>Notification Service</td>
+<td>System</td>
+<td>A system that picks up account-opened events and sends notification emails to applicants.</td>
+<td>Notification</td>
+<td>Notification Service</td>
+<td>Notification</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>branch_system</td>
+<td>Branch System</td>
+<td>System</td>
+<td>The system used in the branch channel where Personal Bankers key and submit applications.</td>
+<td>Branch Channel</td>
+<td>Branch System</td>
+<td>Branch Channel</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>digital_app</td>
+<td>Digital App</td>
+<td>System</td>
+<td>The mobile application through which Applicants self-submit their details for account opening in the digital channel.</td>
+<td>Digital Channel</td>
+<td>Digital App</td>
+<td>Digital Channel</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>compliance_system</td>
+<td>Compliance System</td>
+<td>System</td>
+<td>The system that manages compliance workflows, converts Applications/Cases into KYC Cases, and hands them to Core Banking.</td>
+<td>Compliance</td>
+<td>Compliance System</td>
+<td>Compliance</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>third_party_verification_service</td>
+<td>Third-Party Verification Service</td>
+<td>System</td>
+<td>An external system that performs identity verification on KYC Cases.</td>
+<td>Compliance</td>
+<td>Third-Party Verification Service</td>
+<td>Compliance</td>
+<td>Compliance Kyc Review</td>
+</tr>
+<tr>
+<td>application</td>
+<td>Application</td>
+<td>Work object</td>
+<td>The initial document/record containing applicant details (ID, SSN, proof of address, initial deposit) collected and submitted in the branch channel.</td>
+<td>Branch Channel</td>
+<td>Application, the form, application</td>
+<td>Branch Channel, Compliance, Fraud, Core Banking</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>case_digital</td>
+<td>Case</td>
+<td>Work object</td>
+<td>The initial document/record containing applicant details created through the Digital App in the digital channel.</td>
+<td>Digital Channel</td>
+<td>Case, the case</td>
+<td>Digital Channel, Compliance</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>kyc_case</td>
+<td>KYC Case</td>
+<td>Work object</td>
+<td>The standardized compliance record created from an Application or Case, used for screening, fraud assessment, and approval workflow.</td>
+<td>Compliance</td>
+<td>KYC Case, KYC file, the file, case, K.Y.C. Case</td>
+<td>Compliance, Fraud, Core Banking</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring</td>
+</tr>
+<tr>
+<td>screening_result</td>
+<td>Screening Result</td>
+<td>Work object</td>
+<td>Output from the Screening Engine indicating whether the applicant matched any watchlist entries.</td>
+<td>Compliance</td>
+<td>Screening Result</td>
+<td>Compliance</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>risk_score</td>
+<td>Risk Score</td>
+<td>Work object</td>
+<td>A numeric value generated by the Fraud Engine indicating the likelihood of fraud for a given case.</td>
+<td>Fraud</td>
+<td>Risk Score</td>
+<td>Fraud, Compliance</td>
+<td>Branch Account Application Submission, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>risk_threshold_table</td>
+<td>Risk Threshold Table</td>
+<td>Work object</td>
+<td>A reference table defining acceptable risk score cutoffs per account type, used to determine if a case can proceed.</td>
+<td>Fraud</td>
+<td>Risk Threshold Table</td>
+<td>Fraud</td>
+<td>Branch Account Application Submission, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>deposit_account</td>
+<td>Deposit Account</td>
+<td>Work object</td>
+<td>The bank account record created in the Core Banking System ledger after KYC approval.</td>
+<td>Core Banking</td>
+<td>Deposit Account, account, New Account Record</td>
+<td>Core Banking</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>new_account_record</td>
+<td>New Account Record</td>
+<td>Work object</td>
+<td>The ledger record generated in the Core Banking System when a Deposit Account is created.</td>
+<td>Core Banking</td>
+<td>New Account Record</td>
+<td>Core Banking</td>
+<td>Branch Account Application Submission, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>account_opened_event</td>
+<td>Account Opened Event</td>
+<td>Event</td>
+<td>An event published by the Core Banking System after a deposit account is created, consumed by the Notification Service.</td>
+<td>Core Banking</td>
+<td>Account Opened Event, Account Opened event</td>
+<td>Core Banking, Notification</td>
+<td>Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>notification</td>
+<td>Notification</td>
+<td>Work object</td>
+<td>An email communication sent to the Applicant regarding account opening.</td>
+<td>Notification</td>
+<td>Notification, Confirmation Email</td>
+<td>Notification</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>welcome_packet</td>
+<td>Welcome Packet</td>
+<td>Work object</td>
+<td>A printed document given to the Applicant by the Personal Banker after account creation in the branch channel.</td>
+<td>Branch Channel</td>
+<td>Welcome Packet, paperwork copy</td>
+<td>Branch Channel</td>
+<td>Branch Account Application Submission, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>watchlist</td>
+<td>Watchlist</td>
+<td>Work object</td>
+<td>A reference list of subjects/entities used by the Screening Engine to check applicants against.</td>
+<td>Compliance</td>
+<td>Watchlist</td>
+<td>Compliance</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>manual_override_queue</td>
+<td>Manual Override Queue</td>
+<td>Work object</td>
+<td>A queue where KYC Cases are placed by the Fraud Analyst when the Risk Score exceeds the threshold, for further manual review.</td>
+<td>Fraud</td>
+<td>manual override queue</td>
+<td>Fraud</td>
+<td>Fraud Risk Scoring</td>
+</tr>
+</tbody>
+</table>
+<h2>2. Concept relationships</h2>
+<blockquote>
+<p><em>What this is:</em> the <strong>domain structure</strong> — how concepts actually relate to one another (a work object is <em>produced by</em> a system, <em>transformed into</em> another, <em>sent to</em> a downstream context). This is the connective tissue the flat glossary cannot show: read down it to trace how work flows through the domain, and which concepts sit at the busy crossroads.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>From</th>
+<th>Relationship</th>
+<th>To</th>
+<th>Note</th>
+<th>Stories</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Personal Banker</td>
+<td>produces</td>
+<td>Application</td>
+<td>Personal Banker collects, keys, and submits the Application.</td>
+<td>Branch Account Application Submission, Core Banking Account Opening, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Applicant</td>
+<td>produces</td>
+<td>Case</td>
+<td>Applicant fills in the Case into the Digital App.</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Digital App</td>
+<td>produces</td>
+<td>Case</td>
+<td>Digital App submits the Case to the Compliance System.</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Application</td>
+<td>transformed into</td>
+<td>KYC Case</td>
+<td>The Application is converted into a KYC Case at the point of submission to the Screening Engine or Compliance System.</td>
+<td>Compliance Kyc Review, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Case</td>
+<td>transformed into</td>
+<td>KYC Case</td>
+<td>The Case from the Digital App is converted into a KYC Case by the Compliance System.</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Screening Engine</td>
+<td>produces</td>
+<td>Screening Result</td>
+<td>Screening Engine runs the Subject against the Watchlist and produces a Screening Result.</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Screening Result</td>
+<td>depends on</td>
+<td>KYC Case</td>
+<td>Screening Result is reviewed by Compliance Analyst and documented on the KYC Case.</td>
+<td>Branch Account Application Submission, Escalation Of Stalled Kyc Cases</td>
+</tr>
+<tr>
+<td>Compliance Analyst</td>
+<td>produces</td>
+<td>KYC Case</td>
+<td>Compliance Analyst documents, holds, sends, and approves the KYC Case.</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring</td>
+</tr>
+<tr>
+<td>Fraud Engine</td>
+<td>produces</td>
+<td>Risk Score</td>
+<td>Fraud Engine produces a Risk Score for a KYC Case or Application.</td>
+<td>Branch Account Application Submission, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Risk Score</td>
+<td>compared against</td>
+<td>Risk Threshold Table</td>
+<td>Risk Score is compared against the Risk Threshold Table by the Fraud Analyst or Compliance Ops Lead.</td>
+<td>Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Fraud Analyst</td>
+<td>produces</td>
+<td>Manual Override Queue</td>
+<td>Fraud Analyst places KYC Case into the manual override queue if Risk Score exceeds threshold.</td>
+<td>Fraud Risk Scoring</td>
+</tr>
+<tr>
+<td>Compliance Ops Lead</td>
+<td>produces</td>
+<td>KYC Case</td>
+<td>Compliance Ops Lead pulls stalled KYC Cases and releases them back to Compliance Analyst.</td>
+<td>Branch Account Application Submission, Digital Account Application Submission, Escalation Of Stalled Kyc Cases</td>
+</tr>
+<tr>
+<td>KYC Case</td>
+<td>sent to</td>
+<td>Core Banking System</td>
+<td>KYC Case is handed to Core Banking System after approval for account creation.</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases</td>
+</tr>
+<tr>
+<td>Core Banking System</td>
+<td>produces</td>
+<td>Deposit Account</td>
+<td>Core Banking System creates the Deposit Account in the ledger.</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Core Banking System</td>
+<td>produces</td>
+<td>New Account Record</td>
+<td>Core Banking System generates a New Account Record in the ledger.</td>
+<td>Branch Account Application Submission, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Core Banking System</td>
+<td>produces</td>
+<td>Account Opened Event</td>
+<td>Core Banking System publishes an Account Opened Event after account creation.</td>
+<td>Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Account Opened Event</td>
+<td>triggers</td>
+<td>Notification Service</td>
+<td>Notification Service picks up the Account Opened Event to send a notification.</td>
+<td>Core Banking Account Opening</td>
+</tr>
+<tr>
+<td>Notification Service</td>
+<td>produces</td>
+<td>Notification</td>
+<td>Notification Service sends a Notification (email) to the Applicant.</td>
+<td>Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Personal Banker</td>
+<td>produces</td>
+<td>Welcome Packet</td>
+<td>Personal Banker prints a Welcome Packet for the Applicant.</td>
+<td>Branch Account Application Submission, Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Fraud Analyst</td>
+<td>produces</td>
+<td>Deposit Account</td>
+<td>Fraud Analyst manually freezes or closes the Deposit Account in the Core Banking System.</td>
+<td>Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Screening Engine</td>
+<td>depends on</td>
+<td>Watchlist</td>
+<td>Screening Engine runs the Subject against the Watchlist.</td>
+<td>Digital Account Application Submission</td>
+</tr>
+<tr>
+<td>Third-Party Verification Service</td>
+<td>produces</td>
+<td>KYC Case</td>
+<td>Third-Party Verification Service passes and flips the KYC Case status after identity verification.</td>
+<td>Compliance Kyc Review</td>
+</tr>
+<tr>
+<td>Compliance Analyst</td>
+<td>produces</td>
+<td>Application</td>
+<td>Compliance Analyst documents, holds, sends, and approves the Application (in stories where Application is used instead of KYC Case).</td>
+<td>Core Banking Account Opening, Post Account Fraud Reversal</td>
+</tr>
+<tr>
+<td>Compliance Ops Lead</td>
+<td>monitors</td>
+<td>Risk Score</td>
+<td>Compliance Ops Lead compares the Risk Score against the Risk Threshold Table.</td>
+<td>Post Account Fraud Reversal</td>
+</tr>
+</tbody>
+</table>
+<h2>3. Context overrides</h2>
+<blockquote>
+<p><em>What this is:</em> where a single context uses a term that differs from the global canonical term — keep the healthy ones, fix the rest.<br><em>The <strong>Kind</strong> column means:</em> <strong>legitimate_translation</strong> = a deliberate, healthy context-specific name to keep; <strong>accidental_drift</strong> = an unintended inconsistency to fix.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Context</th>
+<th>Local term</th>
+<th>Global canonical</th>
+<th>Kind</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kyc_case</td>
+<td>Core Banking</td>
+<td>Application</td>
+<td>KYC Case</td>
+<td>accidental_drift</td>
+<td>In story-core-banking-account-opening.md (Core Banking context), the work object is consistently called 'Application' even after it has been through compliance review and should be a KYC Case. This is intra-context inconsistency within the Compliance-to-Core-Banking handoff.</td>
+</tr>
+<tr>
+<td>kyc_case</td>
+<td>Fraud</td>
+<td>Application</td>
+<td>KYC Case</td>
+<td>accidental_drift</td>
+<td>In story-post-account-fraud-reversal.md, the Compliance Analyst sends an 'Application' to the Fraud Engine, but in other stories (story-fraud-risk-scoring.md) the same handoff uses 'KYC Case'. This is synonym drift within the Fraud context.</td>
+</tr>
+<tr>
+<td>notification</td>
+<td>Notification</td>
+<td>Confirmation Email</td>
+<td>Notification</td>
+<td>accidental_drift</td>
+<td>In story-core-banking-account-opening.md, the Notification Service sends a 'Confirmation Email' instead of a 'Notification'. Both refer to the same email sent to the Applicant.</td>
+</tr>
+</tbody>
+</table>
+<h2>4. Boundary translations</h2>
+<blockquote>
+<p><em>What this is:</em> healthy renames that happen as a concept crosses a context boundary — the same idea, translated into each side's language. This is correct DDD, not an error.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>From context</th>
+<th>To context</th>
+<th>From term</th>
+<th>To term</th>
+<th>Note</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>application</td>
+<td>Branch Channel</td>
+<td>Compliance</td>
+<td>Application</td>
+<td>KYC Case</td>
+<td>When the Application crosses from Branch Channel to Compliance, it is converted into a KYC Case — the primary compliance work object.</td>
+</tr>
+<tr>
+<td>case_digital</td>
+<td>Digital Channel</td>
+<td>Compliance</td>
+<td>Case</td>
+<td>KYC Case</td>
+<td>When the Case crosses from Digital Channel to Compliance, it is converted into a KYC Case by the Compliance System.</td>
+</tr>
+<tr>
+<td>kyc_case</td>
+<td>Compliance</td>
+<td>Core Banking</td>
+<td>KYC Case</td>
+<td>Deposit Account</td>
+<td>After approval, the KYC Case is handed to Core Banking which creates a Deposit Account — the work object changes form and ownership.</td>
+</tr>
+<tr>
+<td>account_opened_event</td>
+<td>Core Banking</td>
+<td>Notification</td>
+<td>Account Opened Event</td>
+<td>Notification</td>
+<td>The Core Banking System publishes an Account Opened Event which the Notification Service consumes to send a Notification to the Applicant.</td>
+</tr>
+</tbody>
+</table>
+<h2>5. Homonyms</h2>
+<blockquote>
+<p><em>What this is:</em> a single word that means different things in different contexts — often the strongest signal that a context boundary runs straight through it.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Term</th>
+<th>Meanings by context</th>
+<th>Boundary signal</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Application</td>
+<td>• Branch Channel — The initial document collected by the Personal Banker in the branch channel containing applicant details.<br>• Core Banking — Used incorrectly in story-core-banking-account-opening.md to refer to the compliance-reviewed work object that should be called KYC Case.</td>
+<td>yes</td>
+</tr>
+<tr>
+<td>Case</td>
+<td>• Digital Channel — The initial document created by the Applicant through the Digital App in the digital channel.<br>• Compliance — Used as an alias/short form for KYC Case within Compliance context.</td>
+<td>yes</td>
+</tr>
+</tbody>
+</table>
+<h2>6. Drift report</h2>
+<blockquote>
+<p><em>What this is:</em> <strong>accidental drift</strong> — the same concept named inconsistently <em>within</em> a context, or via synonyms / typos / transcription noise. Each variant is anchored to the context that classifies it as drift AND the stories where you can fix it. Severity weights drift in a core subdomain higher than in a generic one.<br><em>The <strong>Type</strong> column means:</em> <strong>transcription_noise</strong> = speech-to-text or typo artefacts (e.g. &quot;item potency key&quot;); <strong>synonym_drift</strong> = different words for the same meaning within one context; <strong>intra_context_inconsistency</strong> = a single context naming one concept several different ways; <strong>type_drift</strong> = the same work object categorised or typed inconsistently across stories.</p>
+</blockquote>
+<table>
+<thead>
+<tr>
+<th>Concept</th>
+<th>Type</th>
+<th>Primary context</th>
+<th>Observed variants</th>
+<th>Canonical</th>
+<th>Suggested fix</th>
+<th>Subdomain</th>
+<th>Severity</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>kyc_case</td>
+<td>intra_context_inconsistency</td>
+<td>Core Banking</td>
+<td>• Application [Core Banking] — Core Banking Account Opening<br>• KYC Case [Core Banking] — Branch Account Application Submission, Digital Account Application Submission, Escalation Of Stalled Kyc Cases</td>
+<td>KYC Case</td>
+<td>In story-core-banking-account-opening.md, the work object received by Core Banking System is called 'Application' but should be 'KYC Case' to match the other stories and the compliance-to-core-banking handoff.</td>
+<td>—</td>
+<td>high</td>
+<td>Using 'Application' instead of 'KYC Case' in Core Banking context could lead to data model confusion — the object arriving at Core Banking has already been through compliance review and is semantically a KYC Case, not the raw Application.</td>
+</tr>
+<tr>
+<td>kyc_case</td>
+<td>intra_context_inconsistency</td>
+<td>Fraud</td>
+<td>• KYC Case [Fraud] — Fraud Risk Scoring, Digital Account Application Submission<br>• Application [Fraud] — Post Account Fraud Reversal</td>
+<td>KYC Case</td>
+<td>In story-post-account-fraud-reversal.md, the Compliance Analyst sends an 'Application' to the Fraud Engine; align with other stories by using 'KYC Case' for the object sent to fraud scoring.</td>
+<td>—</td>
+<td>high</td>
+<td>Inconsistent naming of the object sent to the Fraud Engine could cause data mapping errors between Compliance and Fraud systems.</td>
+</tr>
+<tr>
+<td>kyc_case</td>
+<td>synonym_drift</td>
+<td>Compliance</td>
+<td>• KYC Case [Compliance] — Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Fraud Risk Scoring<br>• K.Y.C. Case [Compliance] — Compliance Kyc Review<br>• KYC file [Compliance] — Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases<br>• the file [Compliance] — Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases<br>• case [Compliance] — Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission</td>
+<td>KYC Case</td>
+<td>Standardise on 'KYC Case' across all Compliance stories; retire 'K.Y.C. Case', 'KYC file', 'the file', and bare 'case' as aliases.</td>
+<td>—</td>
+<td>medium</td>
+<td>Multiple aliases for the same concept within Compliance could cause confusion in documentation and system design, but the core meaning is clear.</td>
+</tr>
+<tr>
+<td>deposit_account</td>
+<td>synonym_drift</td>
+<td>Core Banking</td>
+<td>• Deposit Account [Core Banking] — Branch Account Application Submission, Compliance Kyc Review, Core Banking Account Opening, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal<br>• New Account Record [Core Banking] — Branch Account Application Submission, Digital Account Application Submission<br>• account [Core Banking] — Branch Account Application Submission, Core Banking Account Opening, Post Account Fraud Reversal</td>
+<td>Deposit Account</td>
+<td>Clarify whether 'New Account Record' is the same as 'Deposit Account' or a separate ledger entry. If they are the same, standardise on 'Deposit Account'. If distinct, define both separately.</td>
+<td>—</td>
+<td>medium</td>
+<td>Ambiguity between 'Deposit Account' and 'New Account Record' could lead to confusion about whether they are the same object or two different artefacts (the account vs. the ledger record).</td>
+</tr>
+<tr>
+<td>notification</td>
+<td>synonym_drift</td>
+<td>Notification</td>
+<td>• Notification [Notification] — Branch Account Application Submission, Compliance Kyc Review, Digital Account Application Submission, Escalation Of Stalled Kyc Cases, Post Account Fraud Reversal<br>• Confirmation Email [Notification] — Core Banking Account Opening</td>
+<td>Notification</td>
+<td>Standardise on 'Notification' across all stories; 'Confirmation Email' is a more specific term that can be kept as an alias but the canonical term should be consistent.</td>
+<td>—</td>
+<td>low</td>
+<td>Both terms clearly refer to the same email sent to the applicant; the difference is cosmetic and unlikely to cause implementation errors.</td>
+</tr>
+</tbody>
+</table>
+<h2>7. Open questions</h2>
+<blockquote>
+<p><em>What this is:</em> concepts that are ambiguous or under-specified in the source and need a domain expert to resolve.</p>
+</blockquote>
+<ol>
+<li>What exactly triggers the hold for Fraud — is it based on the Risk Score alone or a specific threshold?</li>
+<li>How does the Compliance Analyst know when the fraud hold is resolved? Is there a system handshake or manual check?</li>
+<li>What is the exact status information sent back to the branch or digital systems after compliance review?</li>
+<li>What triggers the Notification Service to send the notification — is it the Account Opened Event directly or some other signal?</li>
+<li>How does the Compliance Ops Lead's manual pull (step 15 in story-digital-account-application-submission.md) interact with the automated handoff (step 16)?</li>
+<li>What triggers the automatic escalation after five business days? (Not explicitly modeled in the chains.)</li>
+<li>How does the Compliance Ops Lead decide between resolving a watchlist ambiguity versus waiting on Fraud?</li>
+<li>What is the Risk Threshold Table's structure and who maintains it?</li>
+<li>What exactly happens in the manual override queue after the KYC Case is placed there?</li>
+<li>What are the specific threshold values for different account types?</li>
+<li>What triggers the Fraud Analyst to monitor the Risk Score and initiate a freeze/closure? Is it a scheduled check or alert-based?</li>
+<li>Is there any automated escalation when a Risk Score exceeds the threshold, or is it purely manual?</li>
+<li>What is the role of the Core Banking Ops Analyst in the process? (Listed as an actor but rarely appears in story sequences.)</li>
+<li>Is the 'New Account Record' a separate artefact from the 'Deposit Account' or the same thing described differently?</li>
+<li>How does the Screening Engine convert an Application into a KYC Case — is this an automated transformation or does it require human action?</li>
+</ol>
+
+<p class="meta">Generated 2026-07-19 13:21</p>
+<div id="diagram-modal" class="diagram-modal" hidden>
+  <div class="diagram-toolbar">
+    <button type="button" data-act="zoomout" title="Zoom out">−</button>
+    <button type="button" data-act="zoomin" title="Zoom in">+</button>
+    <button type="button" data-act="reset" title="Fit to screen">⤢</button>
+    <button type="button" data-act="close" title="Close (Esc)">✕</button>
+  </div>
+  <div id="diagram-stage" class="diagram-stage"></div>
+</div>
+<script type="module">
+  import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+
+  document.querySelectorAll('pre > code.language-mermaid').forEach((code) => {
+    const div = document.createElement('div');
+    div.className = 'mermaid';
+    div.textContent = code.textContent;
+    code.parentElement.replaceWith(div);
+  });
+
+  // Match the page's own light/dark choice (set by theme-init.js before this
+  // script runs) -- mermaid's default theme assumes a light canvas, so left
+  // alone every diagram would render dark text/edges invisible against the
+  // dark --bg this page now supports.
+  var _dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: _dark ? 'dark' : 'default' });
+  await mermaid.run();
+
+  // --- click-to-zoom lightbox ---
+  const modal = document.getElementById('diagram-modal');
+  const stage = document.getElementById('diagram-stage');
+  let svg = null, scale = 1, tx = 0, ty = 0;
+
+  const apply = () => {
+    if (svg) svg.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+  };
+
+  const fit = () => {
+    if (!svg) return;
+    svg.style.transform = '';
+    const r = svg.getBoundingClientRect();
+    const s = stage.getBoundingClientRect();
+    scale = (r.width && r.height)
+      ? Math.min(s.width / r.width, s.height / r.height) * 0.95
+      : 1;
+    if (!(scale > 0)) scale = 1;
+    tx = (s.width - r.width * scale) / 2;
+    ty = (s.height - r.height * scale) / 2;
+    apply();
+  };
+
+  const zoomAt = (factor, cx, cy) => {
+    const s = stage.getBoundingClientRect();
+    const px = cx - s.left, py = cy - s.top;
+    const ox = (px - tx) / scale, oy = (py - ty) / scale;
+    scale = Math.min(Math.max(scale * factor, 0.05), 40);
+    tx = px - ox * scale;
+    ty = py - oy * scale;
+    apply();
+  };
+
+  const open = (sourceSvg) => {
+    stage.innerHTML = '';
+    svg = sourceSvg.cloneNode(true);
+    svg.removeAttribute('style');
+    svg.style.transformOrigin = '0 0';
+    stage.appendChild(svg);
+    modal.hidden = false;
+    requestAnimationFrame(fit);
+  };
+
+  const close = () => { modal.hidden = true; stage.innerHTML = ''; svg = null; };
+
+  document.querySelectorAll('.mermaid').forEach((m) => {
+    m.addEventListener('click', () => {
+      const s = m.querySelector('svg');
+      if (s) open(s);
+    });
+  });
+
+  modal.querySelector('.diagram-toolbar').addEventListener('click', (e) => {
+    const act = e.target.getAttribute('data-act');
+    if (act === 'zoomin') zoomAt(1.25, innerWidth / 2, innerHeight / 2);
+    else if (act === 'zoomout') zoomAt(0.8, innerWidth / 2, innerHeight / 2);
+    else if (act === 'reset') fit();
+    else if (act === 'close') close();
+  });
+
+  stage.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    zoomAt(e.deltaY < 0 ? 1.1 : 0.9, e.clientX, e.clientY);
+  }, { passive: false });
+
+  // drag to pan; a click on empty stage (no drag) closes
+  let dragging = false, moved = false, lastX = 0, lastY = 0;
+  stage.addEventListener('pointerdown', (e) => {
+    dragging = true; moved = false; lastX = e.clientX; lastY = e.clientY;
+    stage.classList.add('grabbing');
+    stage.setPointerCapture(e.pointerId);
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+    tx += dx; ty += dy; lastX = e.clientX; lastY = e.clientY;
+    apply();
+  });
+  stage.addEventListener('pointerup', (e) => {
+    dragging = false;
+    stage.classList.remove('grabbing');
+    if (!moved && e.target === stage) close();
+  });
+
+  // pinch to zoom (two pointers)
+  const pts = new Map();
+  let pinchDist = 0;
+  stage.addEventListener('pointerdown', (e) => pts.set(e.pointerId, e));
+  stage.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, e);
+    if (pts.size === 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      const mx = (a.clientX + b.clientX) / 2, my = (a.clientY + b.clientY) / 2;
+      if (pinchDist) zoomAt(d / pinchDist, mx, my);
+      pinchDist = d;
+      dragging = false;
+    }
+  });
+  const dropPt = (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinchDist = 0; };
+  stage.addEventListener('pointerup', dropPt);
+  stage.addEventListener('pointercancel', dropPt);
+
+  document.addEventListener('keydown', (e) => {
+    if (modal.hidden) return;
+    if (e.key === 'Escape') close();
+    else if (e.key === '+' || e.key === '=') zoomAt(1.25, innerWidth / 2, innerHeight / 2);
+    else if (e.key === '-') zoomAt(0.8, innerWidth / 2, innerHeight / 2);
+  });
+</script>
+<script>
+  // Add hover tooltips (story name) to story-number references in matrix cells.
+  // The number -> name legend is read from the numbered "Source stories" list,
+  // so this is a no-op for documents that have no such list.
+  (function () {
+    const idx = {};
+    document.querySelectorAll('h2, h3').forEach((h) => {
+      if (h.textContent.trim().toLowerCase() !== 'source stories') return;
+      let el = h.nextElementSibling;
+      while (el && el.tagName !== 'OL' && el.tagName !== 'UL') el = el.nextElementSibling;
+      if (el) Array.from(el.children).forEach((li, i) => { idx[i + 1] = li.textContent.trim(); });
+    });
+    if (!Object.keys(idx).length) return;
+
+    const esc = (s) => s.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+    // Wrap story numbers in any non-first-column cell that starts with a digit
+    // (matrix "Appears in..." columns, term-ledger "Story(s)" column). Skipping
+    // the first column excludes the Risk register's "#" column; only numbers that
+    // exist in the legend (<= n) are wrapped, so stray figures like years are left.
+    document.querySelectorAll('tr').forEach((tr) => {
+      tr.querySelectorAll('td').forEach((td, ci) => {
+        if (ci === 0 || !/^\s*\d/.test(td.textContent)) return;
+        td.innerHTML = td.innerHTML.replace(/\b(\d+)\b/g, (m, n) =>
+          idx[n] ? `<span class="story-ref" title="${esc(idx[n])}">${n}</span>` : m
+        );
+      });
+    });
+  })();
+</script>
+  </div>
+</div>
+</body>
+</html>
